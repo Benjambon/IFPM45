@@ -71,9 +71,9 @@ function App() {
                 body: JSON.stringify(formData)
             })
             if (res.ok) {
-                const data = await res.json()
-                setCurrentUser(data.user) // 👈 LÀ ! On stocke le vrai utilisateur avec son _id
-                setView('home')
+                const data = await res.json(); // 🚨 NOUVEAU : On lit la réponse
+                setCurrentUser(data.user);     // 🚨 NOUVEAU : On sauvegarde le VRAI profil avec son _id
+                setView('home');
             } else {
                 const data = await res.json()
                 alert(data.error || "Erreur lors de l'inscription.")

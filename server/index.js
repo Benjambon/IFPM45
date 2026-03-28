@@ -61,21 +61,18 @@ app.post('/api/register', async (req, res) => {
             return res.status(400).json({ error: "Cet email est déjà utilisé par un autre compte." });
         }
 
-        // 🔒 SÉCURITÉ : On hache le mot de passe avant de l'enregistrer
         const saltRounds = 10;
         const hashedPassword = await bcrypt.hash(req.body.password, saltRounds);
-
-        // On crée un nouvel objet utilisateur avec le mot de passe haché
         const userData = { ...req.body, password: hashedPassword };
 
         const newUser = new User(userData);
         await newUser.save();
 
-        // NOUVEAU : On renvoie l'utilisateur avec son _id
+        // 🚨 NOUVEAU : On renvoie l'utilisateur créé (sans le mot de passe) pour avoir son _id !
         const userWithoutPassword = newUser.toObject();
         delete userWithoutPassword.password;
 
-        res.status(201).json({ message: "Compte et profil créés avec succès !" });
+        res.status(201).json({ message: "Compte et profil créés avec succès !", user: userWithoutPassword });
     } catch (err) {
         res.status(500).json({ error: err.message });
     }
@@ -128,29 +125,27 @@ app.get('/api/recommandations/:userId', async (req, res) => {
 
         console.log(`🧠 Génération d'un test IA pour ${user.pseudo}...`);
 
-        // Si l'utilisateur est nouveau, on lui donne un profil de base
         const stats = user.statistiques && Object.keys(user.statistiques).length > 0
             ? user.statistiques
             : { niveau_global: "Débutant", historique: "Premier test" };
 
-        // 1. LE PROMPT VERROUILLÉ : On donne la liste exacte à Gemini
+        // 🚨 LE NOUVEAU PROMPT : On donne tes vrais mots à l'IA
         const prompt = `
         Tu es le moteur de recommandation d'une école d'infirmiers.
         Profil de l'étudiant : ${JSON.stringify(stats)}
         Génère une série de 5 questions sur mesure.
         
-        RÈGLES VITALES POUR LES VALEURS :
-        - "difficulte" DOIT être l'une de ces chaînes exactes : "Facile", "Moyenne", "Difficile".
-        - "categorie" DOIT être l'une de ces chaînes exactes : "Dilution & Reconstitution", "Perfusion & Débits (Gouttes/min)", "Insuline & Héparine (Unités Internationales)", "Conversions & Pourcentages purs", "Pousse-Seringue & SAP (ml/h)", "Pédiatrie & Doses Poids-Dépendantes", "Réanimation & Catécholamines", "Transfusion Sanguine", "Oxygénothérapie & Gaz", "Nutrition & Alimentation".
+        RÈGLES VITALES :
+        - "difficulte" DOIT être "Facile", "Moyenne" ou "Difficile".
+        - "categorie" DOIT être l'une de ces chaînes exactes : "Dilution & Reconstitution", "Perfusion & Débits (Gouttes/min)", "Insuline & Héparine (Unités Internationales)", "Conversions & Pourcentages purs", "Pousse-Seringue & SAP (ml/h)", "Pédiatrie & Doses Poids-Dépendantes", "Réanimation & Catécholamines".
         
-        RÉPONDS UNIQUEMENT AVEC UN OBJET JSON. Format strict attendu :
+        RÉPONDS UNIQUEMENT AVEC UN OBJET JSON. Format strict :
         {
           "recommandations": [
             {"categorie": "Pédiatrie & Doses Poids-Dépendantes", "difficulte": "Moyenne", "quantite": 5, "raison": "Texte court expliquant ce choix"}
           ]
         }`;
 
-        // Appel à Gemini
         const response = await ai.models.generateContent({
             model: 'gemini-2.5-flash',
             contents: prompt
@@ -161,17 +156,10 @@ app.get('/api/recommandations/:userId', async (req, res) => {
 
         let serieFinale = [];
 
-        // 2. LA NOUVELLE REQUÊTE MONGODB
+        // 🚨 LA NOUVELLE RECHERCHE MONGODB : On cherche les textes, pas les chiffres !
         for (const consigne of ordonnanceIA.recommandations) {
-
-            // MongoDB va chercher la chaîne exacte dans le tableau 'categories' et la string dans 'difficulte'
             const questions = await Exercice.aggregate([
-                {
-                    $match: {
-                        categories: consigne.categorie,
-                        difficulte: consigne.difficulte
-                    }
-                },
+                { $match: { categories: consigne.categorie, difficulte: consigne.difficulte } },
                 { $sample: { size: consigne.quantite } }
             ]);
 
