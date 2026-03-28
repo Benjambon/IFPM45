@@ -70,6 +70,11 @@ app.post('/api/register', async (req, res) => {
 
         const newUser = new User(userData);
         await newUser.save();
+
+        // NOUVEAU : On renvoie l'utilisateur avec son _id
+        const userWithoutPassword = newUser.toObject();
+        delete userWithoutPassword.password;
+
         res.status(201).json({ message: "Compte et profil créés avec succès !" });
     } catch (err) {
         res.status(500).json({ error: err.message });
@@ -128,18 +133,24 @@ app.get('/api/recommandations/:userId', async (req, res) => {
             ? user.statistiques
             : { niveau_global: "Débutant", historique: "Premier test" };
 
+        // 1. LE PROMPT VERROUILLÉ : On donne la liste exacte à Gemini
         const prompt = `
         Tu es le moteur de recommandation d'une école d'infirmiers.
         Profil de l'étudiant : ${JSON.stringify(stats)}
-        Génère une série de 5 questions.
-        RÉPONDS UNIQUEMENT AVEC UN OBJET JSON. Format attendu :
+        Génère une série de 5 questions sur mesure.
+        
+        RÈGLES VITALES POUR LES VALEURS :
+        - "difficulte" DOIT être l'une de ces chaînes exactes : "Facile", "Moyenne", "Difficile".
+        - "categorie" DOIT être l'une de ces chaînes exactes : "Dilution & Reconstitution", "Perfusion & Débits (Gouttes/min)", "Insuline & Héparine (Unités Internationales)", "Conversions & Pourcentages purs", "Pousse-Seringue & SAP (ml/h)", "Pédiatrie & Doses Poids-Dépendantes", "Réanimation & Catécholamines", "Transfusion Sanguine", "Oxygénothérapie & Gaz", "Nutrition & Alimentation".
+        
+        RÉPONDS UNIQUEMENT AVEC UN OBJET JSON. Format strict attendu :
         {
           "recommandations": [
-            {"difficulte": 1, "quantite": 5, "raison": "Texte court expliquant ce choix à l'étudiant"}
+            {"categorie": "Pédiatrie & Doses Poids-Dépendantes", "difficulte": "Moyenne", "quantite": 5, "raison": "Texte court expliquant ce choix"}
           ]
         }`;
 
-        // Appel à Gemini (tu as déjà initialisé 'ai' en haut de ton fichier)
+        // Appel à Gemini
         const response = await ai.models.generateContent({
             model: 'gemini-2.5-flash',
             contents: prompt
@@ -150,10 +161,17 @@ app.get('/api/recommandations/:userId', async (req, res) => {
 
         let serieFinale = [];
 
+        // 2. LA NOUVELLE REQUÊTE MONGODB
         for (const consigne of ordonnanceIA.recommandations) {
-            // Mongoose permet d'utiliser l'agrégation exactement comme le driver natif MongoDB !
+
+            // MongoDB va chercher la chaîne exacte dans le tableau 'categories' et la string dans 'difficulte'
             const questions = await Exercice.aggregate([
-                { $match: { difficulte: consigne.difficulte } }, // Ajoute "type: consigne.type" si tu utilises les catégories
+                {
+                    $match: {
+                        categories: consigne.categorie,
+                        difficulte: consigne.difficulte
+                    }
+                },
                 { $sample: { size: consigne.quantite } }
             ]);
 
