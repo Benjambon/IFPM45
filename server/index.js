@@ -167,10 +167,10 @@ app.get('/api/recommandations/:userId', async (req, res) => {
         const nbQuestions = 10;
         console.log(`🧠 Demande d'un test IA de ${nbQuestions} questions pour ${user.pseudo}...`);
 
-        // 🚨 On cherche le profil via le VRAI ID de l'utilisateur
+        // 🚨 RÉCUPÉRATION DU PROFIL
         const profilComplet = await Profilage.findOne({ user_id: user._id });
 
-        let statsPourIA = {}; // On simplifie un peu l'objet pour ne pas saturer OpenAI
+        let statsPourIA = {};
         if (profilComplet && profilComplet.performances_par_categorie) {
             profilComplet.performances_par_categorie.forEach(perf => {
                 statsPourIA[perf.nom_categorie] = {
@@ -181,9 +181,18 @@ app.get('/api/recommandations/:userId', async (req, res) => {
             });
         }
 
+        // 🧠 GESTION DU NOUVEAU JOUEUR (Le Démarrage à Froid)
+        let contexteEtudiant = "";
+        if (Object.keys(statsPourIA).length === 0) {
+            contexteEtudiant = "C'est un TOUT NOUVEL étudiant. Son profil est vide. Génère un test de positionnement varié (mélange plusieurs catégories différentes) de niveau 'Facile' ou 'Moyenne' pour évaluer son niveau de base.";
+        } else {
+            contexteEtudiant = `Voici les statistiques de l'étudiant par catégorie : ${JSON.stringify(statsPourIA)}. Analyse ses lacunes (taux de réussite faible) et propose des questions ciblées pour le faire progresser.`;
+        }
+
         const prompt = `
         Tu es le moteur de recommandation d'une école d'infirmiers.
-        Voici les compétences de l'étudiant : ${JSON.stringify(stats)}
+        ${contexteEtudiant}
+        
         Génère une recommandation pour EXACTEMENT ${nbQuestions} questions.
         RÈGLES VITALES :
         1. "difficulte" DOIT être "Facile", "Moyenne" ou "Difficile".
@@ -240,10 +249,11 @@ app.get('/api/recommandations/:userId', async (req, res) => {
     }
 });
 
-// --- ROUTE : MISE À JOUR DU PROFILAGE ---
+// --- NOUVELLE ROUTE : SAUVEGARDE DES RÉSULTATS DANS LE PROFILAGE ---
 app.post('/api/sauvegarder-resultats', async (req, res) => {
     try {
         const { userId, resultats } = req.body;
+        // resultats est le tableau envoyé par React : [{ questionId, categories, difficulte, correct }]
 
         const profilComplet = await Profilage.findOne({ user_id: userId });
         if (!profilComplet) return res.status(404).json({ error: "Profil introuvable" });
@@ -256,7 +266,7 @@ app.post('/api/sauvegarder-resultats', async (req, res) => {
         for (let rep of resultats) {
             const catNom = rep.categories && rep.categories.length > 0 ? rep.categories[0] : "Non catégorisé";
 
-            // On cherche la catégorie, ou on la crée si c'est la première fois
+            // 1. On cherche la catégorie (ou on la crée si c'est la première fois qu'il la joue)
             let catIndex = performances.findIndex(p => p.nom_categorie === catNom);
             if (catIndex === -1) {
                 performances.push({
@@ -269,43 +279,56 @@ app.post('/api/sauvegarder-resultats', async (req, res) => {
 
             let statsCat = performances[catIndex].statistiques_categorie;
 
-            // 🧮 MATHS : Mise à jour de la catégorie (Moyenne glissante)
+            // 🧮 2. MATHS : Mise à jour de la catégorie (Moyenne glissante)
             const nvQuestions = statsCat.questions_vues + 1;
             const valeurReponse = rep.correct ? 100 : 0;
             statsCat.taux_reussite_categorie = ((statsCat.taux_reussite_categorie * statsCat.questions_vues) + valeurReponse) / nvQuestions;
             statsCat.questions_vues = nvQuestions;
             statsCat.niveau_maitrise = statsCat.taux_reussite_categorie / 100; // ex: 80% = 0.80
 
-            // 💾 Ajout de l'historique de la question
-            performances[catIndex].questions_rencontrees.push({
-                question_id: rep.questionId,
-                difficulte_question: rep.difficulte,
-                taux_reussite_question: valeurReponse,
-                historique_tentatives: [{
-                    date_tentative: new Date(),
-                    reussi: rep.correct
-                }]
+            // 3. Mise à jour de l'historique précis de la question posée
+            let qRecontreIndex = performances[catIndex].questions_rencontrees.findIndex(q => q.question_id && q.question_id.toString() === rep.questionId);
+            if (qRecontreIndex === -1) {
+                performances[catIndex].questions_rencontrees.push({
+                    question_id: rep.questionId,
+                    difficulte_question: rep.difficulte,
+                    nb_tentatives_total: 0,
+                    taux_reussite_question: 0,
+                    historique_tentatives: []
+                });
+                qRecontreIndex = performances[catIndex].questions_rencontrees.length - 1;
+            }
+
+            let qRencontre = performances[catIndex].questions_rencontrees[qRecontreIndex];
+            qRencontre.nb_tentatives_total += 1;
+            qRencontre.taux_reussite_question = ((qRencontre.taux_reussite_question * (qRencontre.nb_tentatives_total - 1)) + valeurReponse) / qRencontre.nb_tentatives_total;
+
+            // On ajoute la tentative d'aujourd'hui
+            qRencontre.historique_tentatives.push({
+                date_tentative: new Date(),
+                reussi: rep.correct
             });
 
-            // 🧮 MATHS : Mise à jour du Score ELO Global (+15 ou -15)
+            // 🧮 4. MATHS : Mise à jour du Score ELO Global (+15 ou -15)
             statsGlobales.total_questions_rencontrees += 1;
             statsGlobales.score_elo += (rep.correct ? 15 : -15);
-            if (statsGlobales.score_elo < 0) statsGlobales.score_elo = 0;
+            if (statsGlobales.score_elo < 0) statsGlobales.score_elo = 0; // On ne descend pas sous 0
         }
 
         statsGlobales.derniere_activite = new Date();
 
-        // 🚀 On renvoie tout dans MongoDB
+        // 🚀 5. On renvoie tout dans MongoDB pour écraser l'ancien profil avec le nouveau
         await Profilage.updateOne(
             { user_id: userId },
             { $set: { performances_par_categorie: performances, statistiques_globales: statsGlobales } }
         );
 
+        console.log(`💾 Profil mis à jour pour l'utilisateur ${userId} ! Nouveau ELO : ${statsGlobales.score_elo}`);
         res.json({ message: "Profil mis à jour avec le nouveau format JSON !" });
 
     } catch (err) {
         console.error("❌ Erreur de sauvegarde :", err);
-        res.status(500).json({ error: "Erreur" });
+        res.status(500).json({ error: "Erreur lors de la sauvegarde du profil." });
     }
 });
 

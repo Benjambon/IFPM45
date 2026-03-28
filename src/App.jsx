@@ -229,10 +229,11 @@ function App() {
             setCurrentQuestion(next);
             setSelectedAnswer(null);
         } else {
+            // C'est la fin du test !
             setQuizFinished(true);
             setSelectedAnswer(null);
 
-            // 🚨 FIN DU TEST : On sauvegarde dans le JSON !
+            // 🚨 ON ENVOIE LES RÉSULTATS AU SERVEUR
             try {
                 await fetch(`${API_URL}/api/sauvegarder-resultats`, {
                     method: 'POST',
@@ -242,7 +243,7 @@ function App() {
                         resultats: historiqueReponses
                     })
                 });
-                console.log("✅ Statistiques et ELO sauvegardés !");
+                console.log("✅ Statistiques et ELO sauvegardés avec succès !");
             } catch (err) {
                 console.error("Erreur de sauvegarde :", err);
             }
