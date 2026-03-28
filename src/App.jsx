@@ -257,6 +257,12 @@ function App() {
             } catch (err) {
                 console.error("Erreur de sauvegarde :", err);
             }
+
+            confetti({
+                particleCount: 150,
+                spread: 100,
+                origin: { y: 0.5 }
+            });
         }
     }
 
