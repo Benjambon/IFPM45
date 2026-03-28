@@ -38,6 +38,8 @@ function App() {
             const res = await fetch(`${API_URL}/api/recommandations/${currentUser._id}`);
             if (res.ok) {
                 const data = await res.json();
+                // 🚨 AJOUTE CETTE LIGNE POUR ESPIONNER MONGODB :
+                console.log("🧐 VOICI CE QUE MONGODB RENVOIE :", data[0]);
                 setExercices(data);
                 setCurrentQuestion(0);
                 setScore(0);
@@ -323,7 +325,7 @@ function App() {
                             )}
 
                             <div className="question-card">
-                                {exercices[currentQuestion]?.consigne}
+                                {exercices[currentQuestion]?.consignes}
                             </div>
 
                             <div className="answers-grid">
