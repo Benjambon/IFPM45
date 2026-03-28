@@ -1,7 +1,8 @@
 import { useState, useEffect, useRef } from 'react'
+import confetti from 'canvas-confetti'
 import './App.css'
 
-// 🌍 L'URL du serveur : localhost en dev, Render en prod
+// L'URL du serveur : localhost en dev, Render en prod
 const API_URL = import.meta.env.DEV ? 'http://localhost:5000' : 'https://ifpm-serveur.onrender.com'
 
 function App() {
@@ -19,9 +20,8 @@ function App() {
     const [quizFinished, setQuizFinished] = useState(false)
     const [loading, setLoading] = useState(true)
     const [selectedAnswer, setSelectedAnswer] = useState(null)
-    const [particles, setParticles] = useState([]) // Stocke les étoiles
 
-    // --- ÉTATS DU CHATBOT ---
+    // ÉTATS DU CHATBOT
     const [showChatbot, setShowChatbot] = useState(false)
     const [chatMessages, setChatMessages] = useState([])
     const [chatInput, setChatInput] = useState('')
@@ -85,28 +85,42 @@ function App() {
         if (selectedAnswer) return;
         setSelectedAnswer(propo);
 
-        // 🔄 MISE À JOUR : On vérifie avec "proposition_correct"
         if (propo === exercices[currentQuestion].proposition_correct) {
             setScore(score + 1);
-            // Génération de 10 étoiles
-            const newParticles = Array.from({ length: 10 }).map((_, i) => ({
-                id: Date.now() + i,
-                x: e.clientX,
-                y: e.clientY,
-                tx: `${(Math.random() - 0.5) * 500}px`,
-                tyUp: `${-(Math.random() * 200 + 100)}px`,
-                txEnd: `${(Math.random() - 0.5) * 1000}px`,
-                rotHalf: `${Math.random() * 180}deg`,
-                rotFull: `${Math.random() * 360 + 180}deg`
-            }));
 
-            setParticles(newParticles);
+            // 🌟 MODIFICATION ICI : Calcul de la position du bouton cliqué
+            // e.target est le bouton sur lequel l'utilisateur a cliqué
+            const rect = e.target.getBoundingClientRect();
 
-            setTimeout(() => {
-                setParticles([]);
-            }, 2500);
+            // On calcule le centre du bouton en coordonnées normalisées (entre 0 et 1)
+            // car canvas-confetti utilise ce format pour 'origin'.
+            const originX = (rect.left + rect.width / 2) / window.innerWidth;
+            const originY = (rect.top + rect.height / 2) / window.innerHeight;
+
+            const defaults = {
+                spread: 360,
+                ticks: 50,
+                gravity: 0,
+                decay: 0.94,
+                startVelocity: 25, // Légèrement réduit pour que ça ne parte pas trop loin du bouton
+                colors: ['FFE400', 'FFBD00', 'E89400', 'FFCA6C', 'FDFFB8'],
+                origin: { x: originX, y: originY }
+            };
+
+            const shoot = () => {
+                confetti({
+                    ...defaults,
+                    particleCount: 40,
+                    scalar: 1.2,
+                    shapes: ['star']
+                });
+
+
+            };
+
+            setTimeout(shoot, 0);
         } else {
-            // Mauvaise réponse → ouvrir le chatbot
+            // Logique chatbot inchangée...
             const newSessionId = `chat_${Date.now()}_${Math.random().toString(36).slice(2)}`;
             setChatSessionId(newSessionId);
             setChatMessages([{ role: 'bot', text: `La bonne réponse est : ${exercices[currentQuestion].proposition_correct}` }]);
@@ -121,6 +135,8 @@ function App() {
                         sessionId: newSessionId,
                         exercice: {
                             consigne: exercices[currentQuestion].consignes,
+                            reponse: exercices[currentQuestion].proposition_correct,
+                            explication_calcul: exercices[currentQuestion].reponses,
                             mauvaiseReponse: propo
                         }
                     })
@@ -134,6 +150,8 @@ function App() {
             setChatLoading(false);
         }
     }
+
+    // Le reste du code reste inchangé...
 
     const sendChatMessage = async () => {
         if (!chatInput.trim() || chatLoading) return;
@@ -170,7 +188,6 @@ function App() {
         handleNextQuestion();
     }
 
-    // Auto-scroll des messages du chatbot
     useEffect(() => {
         if (chatMessagesRef.current) {
             chatMessagesRef.current.scrollTop = chatMessagesRef.current.scrollHeight;
@@ -205,23 +222,6 @@ function App() {
 
     return (
         <div className="App">
-            {particles.map(p => (
-                <div
-                    key={p.id}
-                    className="star-particle"
-                    style={{
-                        left: p.x,
-                        top: p.y,
-                        '--tx': p.tx,
-                        '--ty-up': p.tyUp,
-                        '--tx-end': p.txEnd,
-                        '--rot-half': p.rotHalf,
-                        '--rot-full': p.rotFull
-                    }}
-                >
-                    ★
-                </div>
-            ))}
 
             {view === 'landing' && (
                 <div>
@@ -326,13 +326,11 @@ function App() {
                             </div>
 
                             <div className="question-card">
-                                {/* 🔄 MISE À JOUR : consigne devient consignes */}
                                 {exercices[currentQuestion]?.consignes}
                             </div>
 
                             <div className="answers-grid">
                                 {exercices[currentQuestion]?.proposition?.map((propo, i) => {
-                                    // 🔄 MISE À JOUR : On vérifie avec proposition_correct
                                     const isCorrectAnswer = propo === exercices[currentQuestion].proposition_correct;
                                     const isSelected = propo === selectedAnswer;
 
@@ -354,6 +352,7 @@ function App() {
                                             key={i}
                                             className={btnClass}
                                             style={btnStyle}
+                                            // L'objet événement 'e' est passé ici
                                             onClick={(e) => handleAnswer(propo, e)}
                                             disabled={!!selectedAnswer}
                                         >
@@ -363,7 +362,6 @@ function App() {
                                 })}
                             </div>
 
-                            {/* 🔄 MISE À JOUR : On vérifie avec proposition_correct */}
                             {selectedAnswer && selectedAnswer === exercices[currentQuestion]?.proposition_correct && (
                                 <div style={{ marginTop: '30px' }}>
                                     <button className="btn btn-secondary" onClick={handleNextQuestion}>
