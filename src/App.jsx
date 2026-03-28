@@ -81,25 +81,27 @@ function App() {
         setView('landing')
     }
 
-    const handleAnswer = async (propo, e) => {        if (selectedAnswer) return;
+    const handleAnswer = async (propo, e) => {
+        if (selectedAnswer) return;
         setSelectedAnswer(propo);
-        if (propo === exercices[currentQuestion].reponse) {
+
+        // 🔄 MISE À JOUR : On vérifie avec "proposition_correct"
+        if (propo === exercices[currentQuestion].proposition_correct) {
             setScore(score + 1);
-            // Génération de 10 étoiles avec des trajectoires plus larges
+            // Génération de 10 étoiles
             const newParticles = Array.from({ length: 10 }).map((_, i) => ({
                 id: Date.now() + i,
                 x: e.clientX,
                 y: e.clientY,
-                tx: `${(Math.random() - 0.5) * 500}px`, // Dispersion initiale élargie
-                tyUp: `${-(Math.random() * 200 + 100)}px`, // Montée légèrement plus haute
-                txEnd: `${(Math.random() - 0.5) * 1000}px`, // Écart final beaucoup plus large
+                tx: `${(Math.random() - 0.5) * 500}px`,
+                tyUp: `${-(Math.random() * 200 + 100)}px`,
+                txEnd: `${(Math.random() - 0.5) * 1000}px`,
                 rotHalf: `${Math.random() * 180}deg`,
                 rotFull: `${Math.random() * 360 + 180}deg`
             }));
 
             setParticles(newParticles);
 
-            // Le délai de nettoyage est allongé à 2.5 secondes
             setTimeout(() => {
                 setParticles([]);
             }, 2500);
@@ -118,8 +120,10 @@ function App() {
                     body: JSON.stringify({
                         sessionId: newSessionId,
                         exercice: {
-                            consigne: exercices[currentQuestion].consigne,
-                            reponse: exercices[currentQuestion].reponse,
+                            // 🔄 MISE À JOUR : On envoie les nouvelles clés au backend
+                            consigne: exercices[currentQuestion].consignes,
+                            reponse: exercices[currentQuestion].proposition_correct,
+                            explication_calcul: exercices[currentQuestion].reponses, // On ajoute l'explication pour aider l'IA
                             mauvaiseReponse: propo
                         }
                     })
@@ -127,7 +131,7 @@ function App() {
                 const data = await res.json();
                 setChatMessages([{ role: 'bot', text: data.reply }]);
             } catch (err) {
-                setChatMessages([{ role: 'bot', text: "Désolé, je n'ai pas pu me connecter. La bonne réponse est : " + exercices[currentQuestion].reponse }]);
+                setChatMessages([{ role: 'bot', text: "Désolé, je n'ai pas pu me connecter. La bonne réponse est : " + exercices[currentQuestion].proposition_correct }]);
             }
             setChatLoading(false);
         }
@@ -173,11 +177,12 @@ function App() {
             chatMessagesRef.current.scrollTop = chatMessagesRef.current.scrollHeight;
         }
     }, [chatMessages, chatLoading])
+
     const handleNextQuestion = () => {
         const next = currentQuestion + 1;
         if (next < exercices.length) {
             setCurrentQuestion(next);
-            setSelectedAnswer(null); // Réinitialise la sélection pour la question suivante
+            setSelectedAnswer(null);
         } else {
             setQuizFinished(true);
             setSelectedAnswer(null);
@@ -201,7 +206,6 @@ function App() {
 
     return (
         <div className="App">
-            {/* RENDU DES PARTICULES (ÉTOILES) */}
             {particles.map(p => (
                 <div
                     key={p.id}
@@ -323,27 +327,25 @@ function App() {
                             </div>
 
                             <div className="question-card">
-                                {exercices[currentQuestion]?.consigne}
+                                {/* 🔄 MISE À JOUR : consigne devient consignes */}
+                                {exercices[currentQuestion]?.consignes}
                             </div>
 
                             <div className="answers-grid">
                                 {exercices[currentQuestion]?.proposition?.map((propo, i) => {
-                                    const isCorrectAnswer = propo === exercices[currentQuestion].reponse;
+                                    // 🔄 MISE À JOUR : On vérifie avec proposition_correct
+                                    const isCorrectAnswer = propo === exercices[currentQuestion].proposition_correct;
                                     const isSelected = propo === selectedAnswer;
 
                                     let btnClass = "btn btn-outline";
                                     let btnStyle = {};
 
-                                    // Si l'utilisateur a répondu, on applique les couleurs
                                     if (selectedAnswer) {
                                         if (isCorrectAnswer) {
-                                            // La bonne réponse en vert
                                             btnClass = "btn btn-success";
                                         } else if (isSelected && !isCorrectAnswer) {
-                                            // La mauvaise réponse cliquée en rouge
                                             btnClass = "btn btn-danger";
                                         } else {
-                                            // Les autres options sont grisées
                                             btnStyle = { opacity: 0.5, cursor: 'not-allowed' };
                                         }
                                     }
@@ -362,8 +364,8 @@ function App() {
                                 })}
                             </div>
 
-                            {/* Bouton "Suivant" uniquement si bonne réponse */}
-                            {selectedAnswer && selectedAnswer === exercices[currentQuestion]?.reponse && (
+                            {/* 🔄 MISE À JOUR : On vérifie avec proposition_correct */}
+                            {selectedAnswer && selectedAnswer === exercices[currentQuestion]?.proposition_correct && (
                                 <div style={{ marginTop: '30px' }}>
                                     <button className="btn btn-secondary" onClick={handleNextQuestion}>
                                         {currentQuestion + 1 < exercices.length ? "Prochaine question" : "Voir les résultats"}
@@ -371,7 +373,6 @@ function App() {
                                 </div>
                             )}
 
-                            {/* Chatbot bottom sheet sur mauvaise réponse */}
                             {showChatbot && (
                                 <div className="chatbot-overlay">
                                     <div className="chatbot-sheet">
@@ -418,7 +419,5 @@ function App() {
         </div>
     )
 }
-
-
 
 export default App

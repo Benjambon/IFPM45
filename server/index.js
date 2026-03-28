@@ -41,11 +41,15 @@ const userSchema = new mongoose.Schema({
 
 const User = mongoose.model('User', userSchema);
 
+// 🔄 MISE À JOUR : Le nouveau schéma pour coller parfaitement à ta base MongoDB
 const exerciceSchema = new mongoose.Schema({
-    consigne: String,
-    reponse: String,
+    path: String,
+    consignes: String,
+    reponses: String, // Contient l'explication détaillée du calcul
     proposition: [String],
-    difficulte: Number
+    proposition_correct: String, // La réponse courte attendue
+    difficulte: String, // C'est maintenant un String ("Difficile") et plus un Number
+    categories: [String]
 }, { versionKey: false });
 
 const Exercice = mongoose.model('Exercice', exerciceSchema, 'Exercices');
@@ -139,7 +143,8 @@ app.post('/api/chat', async (req, res) => {
 
         let prompt;
         if (exercice) {
-            prompt = `L'étudiant a répondu "${exercice.mauvaiseReponse}" à la question : "${exercice.consigne}". La bonne réponse est "${exercice.reponse}". Explique pourquoi c'est la bonne réponse et comment l'obtenir, de façon claire et pédagogique.`;
+            // 🔄 MISE À JOUR : On donne la méthode de calcul de la BDD à l'IA pour qu'elle explique parfaitement !
+            prompt = `L'étudiant a répondu "${exercice.mauvaiseReponse}" à la question : "${exercice.consigne}". La bonne réponse est "${exercice.reponse}". Voici le calcul attendu : "${exercice.explication_calcul}". Explique de façon bienveillante pourquoi l'étudiant s'est trompé, et détaille ce calcul pas à pas de façon claire et pédagogique pour lui apprendre la méthode.`;
         } else {
             prompt = message;
         }
