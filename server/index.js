@@ -11,8 +11,15 @@ const app = express();
 app.use(cors());
 app.use(express.json());
 
+// 🚨 CORRECTION CRUCIALE : On initialise l'IA et les sessions du chatbot tout en haut !
+
+const ai = new OpenAI({ apiKey: process.env.API_KEY });
+const chatSessions = new Map();
+
 // --- 1. CONNEXION SÉCURISÉE ---
 const MONGO_URI = process.env.MONGO_URI;
+
+// ... (Garde tout le reste de ton code MongoDB en dessous, ne touche à rien d'autre !)
 
 if (!MONGO_URI) {
     console.error("❌ ERREUR CRITIQUE : La variable MONGO_URI est vide ou introuvable !");
@@ -36,7 +43,8 @@ const userSchema = new mongoose.Schema({
     genre: String,
     metier: String,
     dateDiplome: Date,
-    anneeEtude: String
+    anneeEtude: String,
+    statistiques: { type: Object, default: {} }
 }, { versionKey: false });
 
 const User = mongoose.model('User', userSchema);
@@ -54,6 +62,13 @@ const exerciceSchema = new mongoose.Schema({
 
 const Exercice = mongoose.model('Exercice', exerciceSchema, 'Exercices');
 
+// --- NOUVEAU : Schéma pour lire ton JSON de profilage ---
+const profilageSchema = new mongoose.Schema({
+    profil_utilisateur: Object
+}, { collection: 'Profilage', versionKey: false }); // On cible exactement ta collection
+
+const Profilage = mongoose.model('Profilage', profilageSchema);
+
 // --- 3. LES ROUTES ---
 
 app.post('/api/register', async (req, res) => {
@@ -63,16 +78,18 @@ app.post('/api/register', async (req, res) => {
             return res.status(400).json({ error: "Cet email est déjà utilisé par un autre compte." });
         }
 
-        // 🔒 SÉCURITÉ : On hache le mot de passe avant de l'enregistrer
         const saltRounds = 10;
         const hashedPassword = await bcrypt.hash(req.body.password, saltRounds);
-
-        // On crée un nouvel objet utilisateur avec le mot de passe haché
         const userData = { ...req.body, password: hashedPassword };
 
         const newUser = new User(userData);
         await newUser.save();
-        res.status(201).json({ message: "Compte et profil créés avec succès !" });
+
+        // 🚨 NOUVEAU : On renvoie l'utilisateur créé (sans le mot de passe) pour avoir son _id !
+        const userWithoutPassword = newUser.toObject();
+        delete userWithoutPassword.password;
+
+        res.status(201).json({ message: "Compte et profil créés avec succès !", user: userWithoutPassword });
     } catch (err) {
         res.status(500).json({ error: err.message });
     }
@@ -121,11 +138,83 @@ app.get('/api/exercices', async (req, res) => {
     }
 });
 
-// --- 4. CHATBOT PÉDAGOGIQUE (OpenAI) ---
-const openai = new OpenAI({ apiKey: process.env.API_KEY });
-const chatSessions = new Map();
+// --- ROUTE : GÉNÉRATION DE TEST SUR MESURE (AVEC SÉCURITÉ ANTI-CRASH) ---
+app.get('/api/recommandations/:userId', async (req, res) => {
+    try {
+        const user = await User.findById(req.params.userId);
+        if (!user) return res.status(404).json({ error: "Utilisateur introuvable" });
 
-const SYSTEM_INSTRUCTION = "Tu es un professeur bienveillant spécialisé en calculs de doses médicales pour des étudiants infirmiers. Tu expliques clairement et pas à pas. Tes réponses sont concises (max 1-2 phrases) sauf si l'étudiant demande plus de détails. Tu utilises un ton encourageant. Pas de formules de politesses comme \"Cest super que tu aies essayé de résoudre le problème !\" ou \"Bien joué pour ta tentative !\". Concentre-toi uniquement sur l'explication pédagogique de la correction. ";
+        const nbQuestions = 10;
+        console.log(`🧠 Demande d'un test IA de ${nbQuestions} questions pour ${user.pseudo}...`);
+
+        const profilComplet = await Profilage.findOne({ "profil_utilisateur.id_utilisateur": "USR-74892" });
+
+        let stats = { niveau_global: "Débutant", historique: "Premier test" };
+        if (profilComplet && profilComplet.profil_utilisateur && profilComplet.profil_utilisateur.competences) {
+            stats = profilComplet.profil_utilisateur.competences;
+        }
+
+        const prompt = `
+        Tu es le moteur de recommandation d'une école d'infirmiers.
+        Voici les compétences de l'étudiant : ${JSON.stringify(stats)}
+        Génère une recommandation pour EXACTEMENT ${nbQuestions} questions.
+        RÈGLES VITALES :
+        1. "difficulte" DOIT être "Facile", "Moyenne" ou "Difficile".
+        2. "categorie" DOIT être "Dilution & Reconstitution", "Perfusion & Débits (Gouttes/min)", "Insuline & Héparine (Unités Internationales)", "Conversions & Pourcentages purs", "Pousse-Seringue & SAP (ml/h)", "Pédiatrie & Doses Poids-Dépendantes", "Réanimation & Catécholamines", "Transfusion Sanguine", "Oxygénothérapie & Gaz", ou "Nutrition & Alimentation".
+        3. La somme totale des "quantite" DOIT être égale à ${nbQuestions}.
+        RÉPONDS UNIQUEMENT AVEC UN OBJET JSON. Format strict :
+        {"recommandations": [{"categorie": "Pédiatrie & Doses Poids-Dépendantes", "difficulte": "Moyenne", "quantite": 5, "raison": "Texte explicatif"}]}
+        `;
+
+        let ordonnanceIA;
+
+        // 🚨 LE FILET DE SÉCURITÉ EST ICI
+        try {
+            const response = await ai.models.generateContent({
+                model: 'gemini-2.5-flash',
+                contents: prompt
+            });
+            const texteBrut = response.text.trim().replace(/```json/g, "").replace(/```/g, "");
+            ordonnanceIA = JSON.parse(texteBrut);
+            console.log("✅ Réponse IA reçue avec succès.");
+
+        } catch (erreurIA) {
+            // Si on arrive ici, c'est que l'Erreur 429 a frappé !
+            console.warn("⚠️ Gemini est surchargé (Erreur Quota). Activation du mode dégradé !");
+
+            // On tire 10 questions totalement au hasard dans toute la base
+            const serieSecours = await Exercice.aggregate([{ $sample: { size: nbQuestions } }]);
+
+            // On ajoute un petit mot pour que l'étudiant comprenne
+            for (let q of serieSecours) {
+                q.message_tuteur = "Série d'entraînement générale (Notre IA formateur fait une petite pause café ☕).";
+            }
+            return res.json(serieSecours); // On renvoie la série de secours et on s'arrête là
+        }
+
+        // Si l'IA a bien répondu, on fait le traitement normal
+        let serieFinale = [];
+        for (const consigne of ordonnanceIA.recommandations) {
+            const questions = await Exercice.aggregate([
+                { $match: { categories: consigne.categorie, difficulte: consigne.difficulte } },
+                { $sample: { size: consigne.quantite } }
+            ]);
+
+            for (let q of questions) {
+                q.message_tuteur = consigne.raison;
+                serieFinale.push(q);
+            }
+        }
+
+        res.json(serieFinale);
+    } catch (err) {
+        console.error("❌ Erreur serveur grave :", err);
+        res.status(500).json({ error: "Erreur lors de la création du test." });
+    }
+});
+
+// --- 4. CHATBOT PÉDAGOGIQUE (Google Gemini) ---
+const SYSTEM_INSTRUCTION = "Tu es un professeur bienveillant spécialisé en calculs de doses médicales pour des étudiants infirmiers. Tu expliques clairement et pas à pas. Tes réponses sont concises (max 3-4 phrases) sauf si l'étudiant demande plus de détails. Tu utilises un ton encourageant.";
 
 app.post('/api/chat', async (req, res) => {
     try {
