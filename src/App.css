@@ -219,6 +219,7 @@ h2 {
     transform: translate(calc(-50% + var(--tx-end)), 100vh) scale(0.5) rotate(var(--rot-full));
     opacity: 0;
   }
+}
 
 /* --- CHATBOT BOTTOM SHEET --- */
 @keyframes slideUp {
