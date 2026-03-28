@@ -58,6 +58,13 @@ const exerciceSchema = new mongoose.Schema({
 
 const Exercice = mongoose.model('Exercice', exerciceSchema, 'Exercices');
 
+// --- NOUVEAU : Schéma pour lire ton JSON de profilage ---
+const profilageSchema = new mongoose.Schema({
+    profil_utilisateur: Object
+}, { collection: 'Profilage', versionKey: false }); // On cible exactement ta collection
+
+const Profilage = mongoose.model('Profilage', profilageSchema);
+
 // --- 3. LES ROUTES ---
 
 app.post('/api/register', async (req, res) => {
@@ -123,7 +130,7 @@ app.get('/api/exercices', async (req, res) => {
     }
 });
 
-// --- NOUVELLE ROUTE : GÉNÉRATION DE TEST SUR MESURE ---
+// --- ROUTE : GÉNÉRATION DE TEST SUR MESURE (OPTION B) ---
 app.get('/api/recommandations/:userId', async (req, res) => {
     try {
         const user = await User.findById(req.params.userId);
@@ -131,24 +138,45 @@ app.get('/api/recommandations/:userId', async (req, res) => {
 
         console.log(`🧠 Génération d'un test IA pour ${user.pseudo}...`);
 
-        const stats = user.statistiques && Object.keys(user.statistiques).length > 0
-            ? user.statistiques
-            : { niveau_global: "Débutant", historique: "Premier test" };
+        // 🚨 OPTION B : On va chercher le JSON complet dans la collection "Profilage"
+        // Note : Pour ton test actuel, on force la recherche sur "USR-74892" comme dans ton JSON.
+        // À terme, tu pourras relier l'ID dynamiquement.
+        const profilComplet = await Profilage.findOne({ "profil_utilisateur.id_utilisateur": "USR-74892" });
 
-        // 🚨 LE NOUVEAU PROMPT : On donne tes vrais mots à l'IA
+        let stats = { niveau_global: "Débutant", historique: "Premier test" }; // Fallback de sécurité
+
+        if (profilComplet && profilComplet.profil_utilisateur && profilComplet.profil_utilisateur.competences) {
+            stats = profilComplet.profil_utilisateur.competences; // On extrait uniquement le dictionnaire des scores !
+            console.log("✅ Profil clinique trouvé en base de données !");
+        } else {
+            console.log("⚠️ Profil introuvable dans la collection Profilage, utilisation du profil vierge.");
+        }
+
+        // 🚨 LE PROMPT PARFAIT (Lié à ton JSON)
         const prompt = `
         Tu es le moteur de recommandation d'une école d'infirmiers.
-        Profil de l'étudiant : ${JSON.stringify(stats)}
-        Génère une série de 5 questions sur mesure.
+        Voici les compétences détaillées de l'étudiant (Scores et Temps par catégorie) : ${JSON.stringify(stats)}
+        
+        Analyse ses lacunes selon ses scores et ses temps moyens, et génère une série de 5 questions sur mesure.
         
         RÈGLES VITALES :
-        - "difficulte" DOIT être "Facile", "Moyenne" ou "Difficile".
-        - "categorie" DOIT être l'une de ces chaînes exactes : "Dilution & Reconstitution", "Perfusion & Débits (Gouttes/min)", "Insuline & Héparine (Unités Internationales)", "Conversions & Pourcentages purs", "Pousse-Seringue & SAP (ml/h)", "Pédiatrie & Doses Poids-Dépendantes", "Réanimation & Catécholamines".
+        1. "difficulte" DOIT être "Facile", "Moyenne" ou "Difficile".
+        2. "categorie" DOIT être l'une de ces chaînes exactes : 
+           - "Dilution & Reconstitution"
+           - "Perfusion & Débits (Gouttes/min)"
+           - "Insuline & Héparine (Unités Internationales)"
+           - "Conversions & Pourcentages purs"
+           - "Pousse-Seringue & SAP (ml/h)"
+           - "Pédiatrie & Doses Poids-Dépendantes"
+           - "Réanimation & Catécholamines"
+           - "Transfusion Sanguine"
+           - "Oxygénothérapie & Gaz"
+           - "Nutrition & Alimentation"
         
         RÉPONDS UNIQUEMENT AVEC UN OBJET JSON. Format strict :
         {
           "recommandations": [
-            {"categorie": "Pédiatrie & Doses Poids-Dépendantes", "difficulte": "Moyenne", "quantite": 5, "raison": "Texte court expliquant ce choix"}
+            {"categorie": "Pédiatrie & Doses Poids-Dépendantes", "difficulte": "Moyenne", "quantite": 5, "raison": "Texte court expliquant ton choix (ex: 'Ton score est faible et tu vas trop vite sur cette compétence')"}
           ]
         }`;
 
@@ -162,7 +190,6 @@ app.get('/api/recommandations/:userId', async (req, res) => {
 
         let serieFinale = [];
 
-        // 🚨 LA NOUVELLE RECHERCHE MONGODB : On cherche les textes, pas les chiffres !
         for (const consigne of ordonnanceIA.recommandations) {
             const questions = await Exercice.aggregate([
                 { $match: { categories: consigne.categorie, difficulte: consigne.difficulte } },
