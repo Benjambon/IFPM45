@@ -1,6 +1,7 @@
 @import url('https://fonts.googleapis.com/css2?family=Nunito:wght@400;700;800&display=swap');
 
 :root {
+  color-scheme: light; /* Force le mode clair au niveau du navigateur */
   --green: #58cc02;
   --green-shadow: #58a700;
   --purple:#ad14fa;
@@ -13,12 +14,13 @@
   --gray-bg: #f7f7f7;
   --text-dark: #4b4b4b;
   --text-muted: #afafaf;
+  --vibrant-yellow: #ffea00;
 }
 
 body {
   font-family: 'Nunito', sans-serif;
-  color: var(--text-dark);
-  background-color: #ffffff;
+  color: var(--text-dark) !important; /* Écrase les couleurs par défaut de Vite */
+  background-color: #ffffff !important;
   margin: 0;
   display: flex;
   justify-content: center;
@@ -27,19 +29,20 @@ body {
 
 #root {
   width: 100%;
-  max-width: 500px; /* Interface centrée type mobile */
+  max-width: 500px;
   padding: 20px;
   box-sizing: border-box;
   display: flex;
   flex-direction: column;
 }
 
-/* --- TYPOGRAPHIE --- */
+/* TYPOGRAPHIE */
 h1 {
   font-size: 28px;
   font-weight: 800;
   text-align: center;
   margin-bottom: 10px;
+  color: var(--text-dark);
 }
 
 h2 {
@@ -47,6 +50,7 @@ h2 {
   font-weight: 700;
   text-align: center;
   margin-bottom: 20px;
+  color: var(--text-dark);
 }
 
 .subtitle {
@@ -57,7 +61,7 @@ h2 {
   font-weight: 700;
 }
 
-/* --- BOUTONS (Effet 3D Duolingo) --- */
+/* BOUTONS */
 .btn {
   width: 100%;
   padding: 16px;
@@ -78,7 +82,15 @@ h2 {
   box-shadow: none !important;
 }
 
+/* Le bouton principal devient violet */
 .btn-primary {
+  background-color: var(--purple);
+  color: white;
+  box-shadow: 0 4px 0 var(--purple-shadow);
+}
+
+/* Nouvelle classe pour les bonnes réponses */
+.btn-success {
   background-color: var(--green);
   color: white;
   box-shadow: 0 4px 0 var(--green-shadow);
@@ -174,6 +186,39 @@ h2 {
   display: flex;
   flex-direction: column;
   gap: 12px;
+}
+/* ANIMATION DES ÉTOILES */
+.star-particle {
+  position: fixed; /* Fixé par rapport à l'écran */
+  pointer-events: none; /* Pour ne pas gêner les autres clics */
+  font-size: 28px; /* Légèrement plus grand pour compenser le changement de caractère */
+  z-index: 9999;
+
+  /* APPLICATION DE LA COULEUR */
+  color: var(--vibrant-yellow);
+
+  /* Optionnel : ajouter une lueur pour un effet "pétant" renforcé */
+  filter: drop-shadow(0 0 4px rgba(255, 234, 0, 0.7));
+
+  /* L'animation dure 1.2 seconde */
+  animation: starExplode 2.5s cubic-bezier(0.25, 1, 0.5, 1) forwards;
+}
+
+@keyframes starExplode {
+  0% {
+    transform: translate(-50%, -50%) scale(0) rotate(0deg);
+    opacity: 1;
+  }
+  18% {
+    /* L'explosion se fait sur seulement 12% du temps (très rapide) */
+    transform: translate(calc(-50% + var(--tx)), calc(-50% + var(--ty-up))) scale(1.5) rotate(var(--rot-half));
+    opacity: 1;
+  }
+  100% {
+    /* La descente prend les 88% du temps restant (plus lente et fluide) */
+    transform: translate(calc(-50% + var(--tx-end)), 100vh) scale(0.5) rotate(var(--rot-full));
+    opacity: 0;
+  }
 }
 
 /* --- CHATBOT BOTTOM SHEET --- */
