@@ -22,7 +22,7 @@ function App() {
 
     // Chargement des exercices au démarrage
     useEffect(() => {
-        fetch('http://localhost:5000/api/Exercices')
+        fetch('https://ifpm-serveur.onrender.com/api/exercices')
             .then(res => res.json())
             .then(data => { setExercices(data); setLoading(false) })
             .catch(err => { console.error(err); setLoading(false) })
