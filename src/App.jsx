@@ -142,6 +142,27 @@ function App() {
         if (e.key === 'Enter') sendChatMessage();
     }
 
+    // Parse markdown bold (**text**) to JSX with multiline support
+    const renderMarkdownBold = (text) => {
+        if (!text) return '';
+        // Split by lines first
+        const lines = text.split('\n');
+        return (
+            <>
+                {lines.map((line, idx) => (
+                    <div key={idx}>
+                        {line.split(/(\*\*.*?\*\*)/g).map((part, i) => {
+                            if (part.startsWith('**') && part.endsWith('**')) {
+                                return <strong key={i}>{part.slice(2, -2)}</strong>;
+                            }
+                            return part;
+                        })}
+                    </div>
+                ))}
+            </>
+        );
+    }
+
     const handleCloseChatbot = () => {
         setShowChatbot(false);
         setChatMessages([]);
@@ -347,7 +368,7 @@ function App() {
                                         <div className="chatbot-messages" ref={chatMessagesRef}>
                                             {chatMessages.map((msg, i) => (
                                                 <div key={i} className={msg.role === 'user' ? 'chatbot-message-user' : 'chatbot-message-bot'}>
-                                                    {msg.text}
+                                                    {msg.role === 'bot' ? renderMarkdownBold(msg.text) : msg.text}
                                                 </div>
                                             ))}
                                             {chatLoading && <div className="chatbot-typing">...</div>}

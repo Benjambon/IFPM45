@@ -117,7 +117,15 @@ app.get('/api/exercices', async (req, res) => {
 const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
 const chatSessions = new Map();
 
-const SYSTEM_INSTRUCTION = "Tu es un professeur bienveillant spécialisé en calculs de doses médicales pour des étudiants infirmiers. Tu expliques clairement et pas à pas. Tes réponses sont concises (max 3-4 phrases) sauf si l'étudiant demande plus de détails. Tu utilises un ton encourageant.";
+const SYSTEM_INSTRUCTION = `REGLE ABSOLUE - REPONDS EN EXACTEMENT 2 LIGNES SEPAREES:
+
+LIGNE 1: **[reponse exacte]**
+LIGNE 2: [explication courte - 1 phrase MAX]
+
+INTERDIT: bonjour, bravo, merci, details, politesse.
+
+TEST: **42 mL**
+Tu as oublié de diviser par la concentration.`;
 
 app.post('/api/chat', async (req, res) => {
     try {
@@ -139,7 +147,14 @@ app.post('/api/chat', async (req, res) => {
 
         let prompt;
         if (exercice) {
-            prompt = `L'étudiant a répondu "${exercice.mauvaiseReponse}" à la question : "${exercice.consigne}". La bonne réponse est "${exercice.reponse}". Explique pourquoi c'est la bonne réponse et comment l'obtenir, de façon claire et pédagogique.`;
+            prompt = `MAUVAISE REPONSE.
+Question: ${exercice.consigne}
+Etudiant a dit: ${exercice.mauvaiseReponse}
+Bonne reponse: ${exercice.reponse}
+
+FORMAT OBLIGATOIRE - 2 LIGNES EXACTEMENT.
+Ligne 1: **[reponse]**
+Ligne 2: [pourquoi l'erreur et la cle]`;
         } else {
             prompt = message;
         }
