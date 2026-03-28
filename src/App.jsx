@@ -17,7 +17,7 @@ function App() {
     const [currentQuestion, setCurrentQuestion] = useState(0)
     const [score, setScore] = useState(0)
     const [quizFinished, setQuizFinished] = useState(false)
-    const [loading, setLoading] = useState(true)
+    const [loading, setLoading] = useState(false)
     const [selectedAnswer, setSelectedAnswer] = useState(null)
 
     // --- ÉTATS DU CHATBOT ---

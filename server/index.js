@@ -2,7 +2,7 @@ import express from 'express';
 import mongoose from 'mongoose';
 import cors from 'cors';
 import 'dotenv/config';
-import bcrypt from 'bcrypt'; // 🔒 NOUVEAU : Import de bcrypt
+import bcrypt from 'bcrypt';
 import { GoogleGenAI } from '@google/genai';
 
 const app = express();
@@ -11,8 +11,14 @@ const app = express();
 app.use(cors());
 app.use(express.json());
 
+// 🚨 CORRECTION CRUCIALE : On initialise l'IA et les sessions du chatbot tout en haut !
+const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
+const chatSessions = new Map();
+
 // --- 1. CONNEXION SÉCURISÉE ---
 const MONGO_URI = process.env.MONGO_URI;
+
+// ... (Garde tout le reste de ton code MongoDB en dessous, ne touche à rien d'autre !)
 
 if (!MONGO_URI) {
     console.error("❌ ERREUR CRITIQUE : La variable MONGO_URI est vide ou introuvable !");
@@ -177,9 +183,6 @@ app.get('/api/recommandations/:userId', async (req, res) => {
 });
 
 // --- 4. CHATBOT PÉDAGOGIQUE (Google Gemini) ---
-const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
-const chatSessions = new Map();
-
 const SYSTEM_INSTRUCTION = "Tu es un professeur bienveillant spécialisé en calculs de doses médicales pour des étudiants infirmiers. Tu expliques clairement et pas à pas. Tes réponses sont concises (max 3-4 phrases) sauf si l'étudiant demande plus de détails. Tu utilises un ton encourageant.";
 
 app.post('/api/chat', async (req, res) => {
