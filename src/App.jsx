@@ -123,7 +123,7 @@ function App() {
             // Logique chatbot inchangée...
             const newSessionId = `chat_${Date.now()}_${Math.random().toString(36).slice(2)}`;
             setChatSessionId(newSessionId);
-            setChatMessages([]);
+            setChatMessages([{ role: 'bot', text: `La bonne réponse est : ${exercices[currentQuestion].proposition_correct}` }]);
             setChatLoading(true);
             setShowChatbot(true);
 
@@ -141,10 +141,11 @@ function App() {
                         }
                     })
                 });
+                if (!res.ok) throw new Error('server_error');
                 const data = await res.json();
-                setChatMessages([{ role: 'bot', text: data.reply }]);
+                setChatMessages(prev => [...prev, { role: 'bot', text: data.reply }]);
             } catch (err) {
-                setChatMessages([{ role: 'bot', text: "Désolé, je n'ai pas pu me connecter. La bonne réponse est : " + exercices[currentQuestion].proposition_correct }]);
+                setChatMessages(prev => [...prev, { role: 'bot', text: "erreur" }]);
             }
             setChatLoading(false);
         }
@@ -166,10 +167,11 @@ function App() {
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ sessionId: chatSessionId, message: userMsg })
             });
+            if (!res.ok) throw new Error('server_error');
             const data = await res.json();
             setChatMessages(prev => [...prev, { role: 'bot', text: data.reply }]);
         } catch (err) {
-            setChatMessages(prev => [...prev, { role: 'bot', text: "Erreur de connexion, réessaie." }]);
+            setChatMessages(prev => [...prev, { role: 'bot', text: "erreur" }]);
         }
         setChatLoading(false);
     }
@@ -381,7 +383,7 @@ function App() {
                                                     {msg.text}
                                                 </div>
                                             ))}
-                                            {chatLoading && <div className="chatbot-typing">...</div>}
+                                            {chatLoading && <div className="chatbot-typing"><div className="chatbot-spinner"></div></div>}
                                         </div>
                                         <div className="chatbot-input-row">
                                             <input

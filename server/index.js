@@ -108,7 +108,11 @@ app.post('/api/login', async (req, res) => {
 
 app.get('/api/exercices', async (req, res) => {
     try {
-        const exercices = await Exercice.find();
+        const limit = parseInt(req.query.limit) || 20
+        const exercices = await Exercice.aggregate([
+            { $match: { 'proposition.0': { $exists: true } } },
+            { $sample: { size: limit } }
+        ]);
         console.log(`📡 Envoi de ${exercices.length} exercices au frontend`);
         res.json(exercices);
     } catch (err) {
@@ -143,8 +147,7 @@ app.post('/api/chat', async (req, res) => {
 
         let prompt;
         if (exercice) {
-            // 🔄 MISE À JOUR : On donne la méthode de calcul de la BDD à l'IA pour qu'elle explique parfaitement !
-            prompt = `L'étudiant a répondu "${exercice.mauvaiseReponse}" à la question : "${exercice.consigne}". La bonne réponse est "${exercice.reponse}". Voici le calcul attendu : "${exercice.explication_calcul}". Explique de façon bienveillante pourquoi l'étudiant s'est trompé, et détaille ce calcul pas à pas de façon claire et pédagogique pour lui apprendre la méthode.`;
+            prompt = `L'étudiant a répondu "${exercice.mauvaiseReponse}" à la question : "${exercice.consigne}". Explique brièvement et avec bienveillance pourquoi cette réponse est incorrecte. Donne uniquement une explication pédagogique simple, sans révéler ni répéter la bonne réponse.`;
         } else {
             prompt = message;
         }
