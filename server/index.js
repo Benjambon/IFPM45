@@ -3,7 +3,7 @@ import mongoose from 'mongoose';
 import cors from 'cors';
 import 'dotenv/config';
 import bcrypt from 'bcrypt'; // 🔒 NOUVEAU : Import de bcrypt
-import { GoogleGenAI } from '@google/genai';
+import OpenAI from 'openai';
 
 const app = express();
 
@@ -121,8 +121,8 @@ app.get('/api/exercices', async (req, res) => {
     }
 });
 
-// --- 4. CHATBOT PÉDAGOGIQUE (Google Gemini) ---
-const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
+// --- 4. CHATBOT PÉDAGOGIQUE (OpenAI) ---
+const openai = new OpenAI({ apiKey: process.env.API_KEY });
 const chatSessions = new Map();
 
 const SYSTEM_INSTRUCTION = "Tu es un professeur bienveillant spécialisé en calculs de doses médicales pour des étudiants infirmiers. Tu expliques clairement et pas à pas. Tes réponses sont concises (max 3-4 phrases) sauf si l'étudiant demande plus de détails. Tu utilises un ton encourageant.";
@@ -136,14 +136,10 @@ app.post('/api/chat', async (req, res) => {
         }
 
         if (!chatSessions.has(sessionId)) {
-            chatSessions.set(sessionId, ai.chats.create({
-                model: 'gemini-2.5-flash',
-                config: { systemInstruction: SYSTEM_INSTRUCTION },
-                history: [],
-            }));
+            chatSessions.set(sessionId, []);
         }
 
-        const chat = chatSessions.get(sessionId);
+        const history = chatSessions.get(sessionId);
 
         let prompt;
         if (exercice) {
@@ -152,8 +148,20 @@ app.post('/api/chat', async (req, res) => {
             prompt = message;
         }
 
-        const response = await chat.sendMessage({ message: prompt });
-        res.json({ reply: response.text });
+        history.push({ role: 'user', content: prompt });
+
+        const completion = await openai.chat.completions.create({
+            model: 'gpt-4o-mini',
+            messages: [
+                { role: 'system', content: SYSTEM_INSTRUCTION },
+                ...history,
+            ],
+        });
+
+        const reply = completion.choices[0].message.content;
+        history.push({ role: 'assistant', content: reply });
+
+        res.json({ reply });
     } catch (err) {
         console.error("Erreur chatbot :", err);
         res.status(500).json({ error: "Erreur lors de la génération de la réponse." });
