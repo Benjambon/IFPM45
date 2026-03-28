@@ -114,6 +114,16 @@ function App() {
         if (selectedAnswer) return;
         setSelectedAnswer(propo);
 
+        // 🚨 CORRECTION 1 : On vérifie la réponse ET on la sauvegarde dans l'historique !
+        const isCorrectAnswer = propo === exercices[currentQuestion].proposition_correct;
+
+        setHistoriqueReponses(prev => [...prev, {
+            questionId: exercices[currentQuestion]._id,
+            categories: exercices[currentQuestion].categories,
+            difficulte: exercices[currentQuestion].difficulte,
+            correct: isCorrectAnswer
+        }]);
+
         if (propo === exercices[currentQuestion].proposition_correct) {
             setScore(score + 1);
 

@@ -253,10 +253,27 @@ app.get('/api/recommandations/:userId', async (req, res) => {
 app.post('/api/sauvegarder-resultats', async (req, res) => {
     try {
         const { userId, resultats } = req.body;
-        // resultats est le tableau envoyé par React : [{ questionId, categories, difficulte, correct }]
 
-        const profilComplet = await Profilage.findOne({ user_id: userId });
-        if (!profilComplet) return res.status(404).json({ error: "Profil introuvable" });
+        // 🚨 SÉCURITÉ 1 : On vérifie que React envoie bien les résultats
+        if (!resultats || resultats.length === 0) {
+            console.log("⚠️ Attention : React a envoyé un tableau de résultats vide !");
+            return res.status(400).json({ error: "Aucun résultat à sauvegarder." });
+        }
+
+        let profilComplet = await Profilage.findOne({ user_id: userId });
+
+        // 🚨 SÉCURITÉ 2 : Si c'est un vieux compte de test sans profil, on le crée à la volée !
+        if (!profilComplet) {
+            console.log("🛠️ Ancien compte détecté : Création d'un profil vierge...");
+            profilComplet = new Profilage({
+                user_id: userId,
+                anneeEtude: "1",
+                statistiques_globales: { total_questions_rencontrees: 0, taux_reussite_global: 0, temps_moyen_global_sec: 0, score_elo: 1000 },
+                embedding_utilisateur: [],
+                performances_par_categorie: []
+            });
+            await profilComplet.save();
+        }
 
         let performances = profilComplet.performances_par_categorie || [];
         let statsGlobales = profilComplet.statistiques_globales || {
@@ -266,7 +283,6 @@ app.post('/api/sauvegarder-resultats', async (req, res) => {
         for (let rep of resultats) {
             const catNom = rep.categories && rep.categories.length > 0 ? rep.categories[0] : "Non catégorisé";
 
-            // 1. On cherche la catégorie (ou on la crée si c'est la première fois qu'il la joue)
             let catIndex = performances.findIndex(p => p.nom_categorie === catNom);
             if (catIndex === -1) {
                 performances.push({
@@ -279,14 +295,14 @@ app.post('/api/sauvegarder-resultats', async (req, res) => {
 
             let statsCat = performances[catIndex].statistiques_categorie;
 
-            // 🧮 2. MATHS : Mise à jour de la catégorie (Moyenne glissante)
+            // 🧮 MATHS : Mise à jour de la catégorie
             const nvQuestions = statsCat.questions_vues + 1;
             const valeurReponse = rep.correct ? 100 : 0;
             statsCat.taux_reussite_categorie = ((statsCat.taux_reussite_categorie * statsCat.questions_vues) + valeurReponse) / nvQuestions;
             statsCat.questions_vues = nvQuestions;
-            statsCat.niveau_maitrise = statsCat.taux_reussite_categorie / 100; // ex: 80% = 0.80
+            statsCat.niveau_maitrise = statsCat.taux_reussite_categorie / 100;
 
-            // 3. Mise à jour de l'historique précis de la question posée
+            // Mise à jour de l'historique de la question
             let qRecontreIndex = performances[catIndex].questions_rencontrees.findIndex(q => q.question_id && q.question_id.toString() === rep.questionId);
             if (qRecontreIndex === -1) {
                 performances[catIndex].questions_rencontrees.push({
@@ -303,21 +319,20 @@ app.post('/api/sauvegarder-resultats', async (req, res) => {
             qRencontre.nb_tentatives_total += 1;
             qRencontre.taux_reussite_question = ((qRencontre.taux_reussite_question * (qRencontre.nb_tentatives_total - 1)) + valeurReponse) / qRencontre.nb_tentatives_total;
 
-            // On ajoute la tentative d'aujourd'hui
             qRencontre.historique_tentatives.push({
                 date_tentative: new Date(),
                 reussi: rep.correct
             });
 
-            // 🧮 4. MATHS : Mise à jour du Score ELO Global (+15 ou -15)
+            // 🧮 MATHS : Mise à jour du ELO Global
             statsGlobales.total_questions_rencontrees += 1;
             statsGlobales.score_elo += (rep.correct ? 15 : -15);
-            if (statsGlobales.score_elo < 0) statsGlobales.score_elo = 0; // On ne descend pas sous 0
+            if (statsGlobales.score_elo < 0) statsGlobales.score_elo = 0;
         }
 
         statsGlobales.derniere_activite = new Date();
 
-        // 🚀 5. On renvoie tout dans MongoDB pour écraser l'ancien profil avec le nouveau
+        // 🚀 Sauvegarde finale MongoDB
         await Profilage.updateOne(
             { user_id: userId },
             { $set: { performances_par_categorie: performances, statistiques_globales: statsGlobales } }
