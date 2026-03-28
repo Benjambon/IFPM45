@@ -152,12 +152,18 @@ app.get('/api/exercices', async (req, res) => {
 });
 
 // ROUTE : RÉCUPÉRATION DES STATISTIQUES UTILISATEUR
+// ROUTE : RÉCUPÉRATION DES STATISTIQUES UTILISATEUR
 app.get('/api/statistiques/:userId', async (req, res) => {
     try {
         const stats = await Profilage.findOne({ user_id: req.params.userId });
 
+        // Au lieu de renvoyer une erreur 404, on renvoie des stats par défaut (0)
+        // si l'utilisateur n'a pas encore de profil de statistiques
         if (!stats || !stats.statistiques_globales) {
-            return res.status(404).json({ error: "Statistiques introuvables pour cet utilisateur." });
+            return res.json({
+                taux_reussite: 0,
+                temps_moyen: 0
+            });
         }
 
         res.json({
