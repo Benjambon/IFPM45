@@ -130,66 +130,62 @@ app.get('/api/exercices', async (req, res) => {
     }
 });
 
-// --- ROUTE : GÉNÉRATION DE TEST SUR MESURE (OPTION B) ---
+// --- ROUTE : GÉNÉRATION DE TEST SUR MESURE (AVEC SÉCURITÉ ANTI-CRASH) ---
 app.get('/api/recommandations/:userId', async (req, res) => {
     try {
         const user = await User.findById(req.params.userId);
         if (!user) return res.status(404).json({ error: "Utilisateur introuvable" });
 
-        console.log(`🧠 Génération d'un test IA pour ${user.pseudo}...`);
+        const nbQuestions = 10;
+        console.log(`🧠 Demande d'un test IA de ${nbQuestions} questions pour ${user.pseudo}...`);
 
-        // 🚨 OPTION B : On va chercher le JSON complet dans la collection "Profilage"
-        // Note : Pour ton test actuel, on force la recherche sur "USR-74892" comme dans ton JSON.
-        // À terme, tu pourras relier l'ID dynamiquement.
         const profilComplet = await Profilage.findOne({ "profil_utilisateur.id_utilisateur": "USR-74892" });
 
-        let stats = { niveau_global: "Débutant", historique: "Premier test" }; // Fallback de sécurité
-
+        let stats = { niveau_global: "Débutant", historique: "Premier test" };
         if (profilComplet && profilComplet.profil_utilisateur && profilComplet.profil_utilisateur.competences) {
-            stats = profilComplet.profil_utilisateur.competences; // On extrait uniquement le dictionnaire des scores !
-            console.log("✅ Profil clinique trouvé en base de données !");
-        } else {
-            console.log("⚠️ Profil introuvable dans la collection Profilage, utilisation du profil vierge.");
+            stats = profilComplet.profil_utilisateur.competences;
         }
 
-        // 🚨 LE PROMPT PARFAIT (Lié à ton JSON)
         const prompt = `
         Tu es le moteur de recommandation d'une école d'infirmiers.
-        Voici les compétences détaillées de l'étudiant (Scores et Temps par catégorie) : ${JSON.stringify(stats)}
-        
-        Analyse ses lacunes selon ses scores et ses temps moyens, et génère une série de 5 questions sur mesure.
-        
+        Voici les compétences de l'étudiant : ${JSON.stringify(stats)}
+        Génère une recommandation pour EXACTEMENT ${nbQuestions} questions.
         RÈGLES VITALES :
         1. "difficulte" DOIT être "Facile", "Moyenne" ou "Difficile".
-        2. "categorie" DOIT être l'une de ces chaînes exactes : 
-           - "Dilution & Reconstitution"
-           - "Perfusion & Débits (Gouttes/min)"
-           - "Insuline & Héparine (Unités Internationales)"
-           - "Conversions & Pourcentages purs"
-           - "Pousse-Seringue & SAP (ml/h)"
-           - "Pédiatrie & Doses Poids-Dépendantes"
-           - "Réanimation & Catécholamines"
-           - "Transfusion Sanguine"
-           - "Oxygénothérapie & Gaz"
-           - "Nutrition & Alimentation"
-        
+        2. "categorie" DOIT être "Dilution & Reconstitution", "Perfusion & Débits (Gouttes/min)", "Insuline & Héparine (Unités Internationales)", "Conversions & Pourcentages purs", "Pousse-Seringue & SAP (ml/h)", "Pédiatrie & Doses Poids-Dépendantes", "Réanimation & Catécholamines", "Transfusion Sanguine", "Oxygénothérapie & Gaz", ou "Nutrition & Alimentation".
+        3. La somme totale des "quantite" DOIT être égale à ${nbQuestions}.
         RÉPONDS UNIQUEMENT AVEC UN OBJET JSON. Format strict :
-        {
-          "recommandations": [
-            {"categorie": "Pédiatrie & Doses Poids-Dépendantes", "difficulte": "Moyenne", "quantite": 5, "raison": "Texte court expliquant ton choix (ex: 'Ton score est faible et tu vas trop vite sur cette compétence')"}
-          ]
-        }`;
+        {"recommandations": [{"categorie": "Pédiatrie & Doses Poids-Dépendantes", "difficulte": "Moyenne", "quantite": 5, "raison": "Texte explicatif"}]}
+        `;
 
-        const response = await ai.models.generateContent({
-            model: 'gemini-2.5-flash',
-            contents: prompt
-        });
+        let ordonnanceIA;
 
-        const texteBrut = response.text.trim().replace(/```json/g, "").replace(/```/g, "");
-        const ordonnanceIA = JSON.parse(texteBrut);
+        // 🚨 LE FILET DE SÉCURITÉ EST ICI
+        try {
+            const response = await ai.models.generateContent({
+                model: 'gemini-2.5-flash',
+                contents: prompt
+            });
+            const texteBrut = response.text.trim().replace(/```json/g, "").replace(/```/g, "");
+            ordonnanceIA = JSON.parse(texteBrut);
+            console.log("✅ Réponse IA reçue avec succès.");
 
+        } catch (erreurIA) {
+            // Si on arrive ici, c'est que l'Erreur 429 a frappé !
+            console.warn("⚠️ Gemini est surchargé (Erreur Quota). Activation du mode dégradé !");
+
+            // On tire 10 questions totalement au hasard dans toute la base
+            const serieSecours = await Exercice.aggregate([{ $sample: { size: nbQuestions } }]);
+
+            // On ajoute un petit mot pour que l'étudiant comprenne
+            for (let q of serieSecours) {
+                q.message_tuteur = "Série d'entraînement générale (Notre IA formateur fait une petite pause café ☕).";
+            }
+            return res.json(serieSecours); // On renvoie la série de secours et on s'arrête là
+        }
+
+        // Si l'IA a bien répondu, on fait le traitement normal
         let serieFinale = [];
-
         for (const consigne of ordonnanceIA.recommandations) {
             const questions = await Exercice.aggregate([
                 { $match: { categories: consigne.categorie, difficulte: consigne.difficulte } },
@@ -204,8 +200,8 @@ app.get('/api/recommandations/:userId', async (req, res) => {
 
         res.json(serieFinale);
     } catch (err) {
-        console.error("❌ Erreur génération IA :", err);
-        res.status(500).json({ error: "Erreur lors de la création du test sur mesure." });
+        console.error("❌ Erreur serveur grave :", err);
+        res.status(500).json({ error: "Erreur lors de la création du test." });
     }
 });
 
