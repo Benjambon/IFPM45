@@ -1,6 +1,9 @@
 import { useState, useEffect } from 'react'
 import './App.css'
 
+// 🌍 L'URL de ton serveur Render centralisée ici
+const API_URL = 'https://ifpm-serveur.onrender.com'
+
 function App() {
     // --- GESTION DES ÉCRANS (landing, login, register, profile, home, quiz) ---
     const [view, setView] = useState('landing')
@@ -22,7 +25,7 @@ function App() {
 
     // Chargement des exercices au démarrage
     useEffect(() => {
-        fetch('https://ifpm-serveur.onrender.com/api/exercices')
+        fetch(`${API_URL}/api/exercices`)
             .then(res => res.json())
             .then(data => { setExercices(data); setLoading(false) })
             .catch(err => { console.error(err); setLoading(false) })
@@ -36,7 +39,7 @@ function App() {
     const handleRegister = async (e) => {
         e.preventDefault()
         try {
-            const res = await fetch('http://localhost:5000/api/register', {
+            const res = await fetch(`${API_URL}/api/register`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify(formData)
@@ -56,7 +59,7 @@ function App() {
     const handleLogin = async (e) => {
         e.preventDefault()
         try {
-            const res = await fetch('http://localhost:5000/api/login', {
+            const res = await fetch(`${API_URL}/api/login`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify(loginData)
