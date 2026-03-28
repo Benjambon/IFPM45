@@ -17,6 +17,7 @@ function App() {
     const [currentQuestion, setCurrentQuestion] = useState(0)
     const [score, setScore] = useState(0)
     const [quizFinished, setQuizFinished] = useState(false)
+    const [historiqueReponses, setHistoriqueReponses] = useState([])
     const [loading, setLoading] = useState(false)
     const [selectedAnswer, setSelectedAnswer] = useState(null)
     const [userStats, setUserStats] = useState(null)
@@ -43,6 +44,7 @@ function App() {
                 setCurrentQuestion(0);
                 setScore(0);
                 setQuizFinished(false);
+                setHistoriqueReponses([]);
                 setView('quiz');
             } else {
                 alert("Erreur lors de la génération du test.");
@@ -103,6 +105,16 @@ function App() {
     const handleAnswer = async (propo, e) => {
         if (selectedAnswer) return;
         setSelectedAnswer(propo);
+
+        // 🚨 CORRECTION 1 : On vérifie la réponse ET on la sauvegarde dans l'historique !
+        const isCorrectAnswer = propo === exercices[currentQuestion].proposition_correct;
+
+        setHistoriqueReponses(prev => [...prev, {
+            questionId: exercices[currentQuestion]._id,
+            categories: exercices[currentQuestion].categories,
+            difficulte: exercices[currentQuestion].difficulte,
+            correct: isCorrectAnswer
+        }]);
 
         if (propo === exercices[currentQuestion].proposition_correct) {
             setScore(score + 1);
@@ -220,14 +232,30 @@ function App() {
         }
     }, [chatMessages, chatLoading])
 
-    const handleNextQuestion = () => {
+    const handleNextQuestion = async () => {
         const next = currentQuestion + 1;
         if (next < exercices.length) {
             setCurrentQuestion(next);
             setSelectedAnswer(null);
         } else {
+            // C'est la fin du test !
             setQuizFinished(true);
             setSelectedAnswer(null);
+
+            // 🚨 ON ENVOIE LES RÉSULTATS AU SERVEUR
+            try {
+                await fetch(`${API_URL}/api/sauvegarder-resultats`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        userId: currentUser._id,
+                        resultats: historiqueReponses
+                    })
+                });
+                console.log("✅ Statistiques et ELO sauvegardés avec succès !");
+            } catch (err) {
+                console.error("Erreur de sauvegarde :", err);
+            }
 
             confetti({
                 particleCount: 150,
