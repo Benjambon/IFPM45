@@ -17,6 +17,7 @@ function App() {
     const [currentQuestion, setCurrentQuestion] = useState(0)
     const [score, setScore] = useState(0)
     const [quizFinished, setQuizFinished] = useState(false)
+    const [historiqueReponses, setHistoriqueReponses] = useState([])
     const [loading, setLoading] = useState(false)
     const [selectedAnswer, setSelectedAnswer] = useState(null)
     const [particles, setParticles] = useState([]) // Stocke les étoiles
@@ -45,6 +46,7 @@ function App() {
                 setCurrentQuestion(0);
                 setScore(0);
                 setQuizFinished(false);
+                setHistoriqueReponses([]);
                 setView('quiz');
             } else {
                 alert("Erreur lors de la génération du test.");
@@ -112,8 +114,18 @@ function App() {
         if (selectedAnswer) return;
         setSelectedAnswer(propo);
 
-        // 🔄 MISE À JOUR : On vérifie avec "proposition_correct"
-        if (propo === exercices[currentQuestion].proposition_correct) {
+        // 🔄 On vérifie avec "proposition_correct"
+        const isCorrectAnswer = propo === exercices[currentQuestion].proposition_correct;
+
+        // 🚨 CORRECTION : On mémorise la réponse ICI, au moment où tu cliques !
+        setHistoriqueReponses(prev => [...prev, {
+            questionId: exercices[currentQuestion]._id,
+            categories: exercices[currentQuestion].categories,
+            difficulte: exercices[currentQuestion].difficulte,
+            correct: isCorrectAnswer
+        }]);
+
+        if (isCorrectAnswer) {
             setScore(score + 1);
             // Génération de 10 étoiles
             const newParticles = Array.from({ length: 10 }).map((_, i) => ({
@@ -204,7 +216,7 @@ function App() {
         }
     }, [chatMessages, chatLoading])
 
-    const handleNextQuestion = () => {
+    const handleNextQuestion = async () => {
         const next = currentQuestion + 1;
         if (next < exercices.length) {
             setCurrentQuestion(next);
@@ -212,6 +224,21 @@ function App() {
         } else {
             setQuizFinished(true);
             setSelectedAnswer(null);
+
+            // 🚨 FIN DU TEST : On sauvegarde dans le JSON !
+            try {
+                await fetch(`${API_URL}/api/sauvegarder-resultats`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        userId: currentUser._id,
+                        resultats: historiqueReponses
+                    })
+                });
+                console.log("✅ Statistiques et ELO sauvegardés !");
+            } catch (err) {
+                console.error("Erreur de sauvegarde :", err);
+            }
         }
     }
 
@@ -368,7 +395,6 @@ function App() {
 
                             <div className="answers-grid">
                                 {exercices[currentQuestion]?.proposition?.map((propo, i) => {
-                                    // 🔄 MISE À JOUR : On vérifie avec proposition_correct
                                     const isCorrectAnswer = propo === exercices[currentQuestion].proposition_correct;
                                     const isSelected = propo === selectedAnswer;
 

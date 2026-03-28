@@ -62,10 +62,14 @@ const exerciceSchema = new mongoose.Schema({
 
 const Exercice = mongoose.model('Exercice', exerciceSchema, 'Exercices');
 
-// --- NOUVEAU : Schéma pour lire ton JSON de profilage ---
+// --- LE NOUVEAU SCHÉMA PROFILAGE ---
 const profilageSchema = new mongoose.Schema({
-    profil_utilisateur: Object
-}, { collection: 'Profilage', versionKey: false }); // On cible exactement ta collection
+    user_id: { type: mongoose.Schema.Types.ObjectId, ref: 'User' }, // Le vrai ID de l'utilisateur !
+    anneeEtude: String,
+    statistiques_globales: Object,
+    embedding_utilisateur: [Number],
+    performances_par_categorie: [Object]
+}, { collection: 'Profilage', versionKey: false });
 
 const Profilage = mongoose.model('Profilage', profilageSchema);
 
@@ -84,6 +88,22 @@ app.post('/api/register', async (req, res) => {
 
         const newUser = new User(userData);
         await newUser.save();
+
+        // 🚨 NOUVEAU : Création du Profilage vierge avec ton nouveau format JSON
+        const newProfilage = new Profilage({
+            user_id: newUser._id,
+            anneeEtude: newUser.anneeEtude || "1",
+            statistiques_globales: {
+                total_questions_rencontrees: 0,
+                taux_reussite_global: 0,
+                temps_moyen_global_sec: 0,
+                score_elo: 1000,
+                derniere_activite: new Date()
+            },
+            embedding_utilisateur: [],
+            performances_par_categorie: [] // Se remplira au fur et à mesure qu'il jouera
+        });
+        await newProfilage.save();
 
         // 🚨 NOUVEAU : On renvoie l'utilisateur créé (sans le mot de passe) pour avoir son _id !
         const userWithoutPassword = newUser.toObject();
@@ -147,11 +167,18 @@ app.get('/api/recommandations/:userId', async (req, res) => {
         const nbQuestions = 10;
         console.log(`🧠 Demande d'un test IA de ${nbQuestions} questions pour ${user.pseudo}...`);
 
-        const profilComplet = await Profilage.findOne({ "profil_utilisateur.id_utilisateur": "USR-74892" });
+        // 🚨 On cherche le profil via le VRAI ID de l'utilisateur
+        const profilComplet = await Profilage.findOne({ user_id: user._id });
 
-        let stats = { niveau_global: "Débutant", historique: "Premier test" };
-        if (profilComplet && profilComplet.profil_utilisateur && profilComplet.profil_utilisateur.competences) {
-            stats = profilComplet.profil_utilisateur.competences;
+        let statsPourIA = {}; // On simplifie un peu l'objet pour ne pas saturer OpenAI
+        if (profilComplet && profilComplet.performances_par_categorie) {
+            profilComplet.performances_par_categorie.forEach(perf => {
+                statsPourIA[perf.nom_categorie] = {
+                    questions_vues: perf.statistiques_categorie.questions_vues,
+                    taux_reussite: perf.statistiques_categorie.taux_reussite_categorie,
+                    niveau_maitrise: perf.statistiques_categorie.niveau_maitrise
+                };
+            });
         }
 
         const prompt = `
@@ -210,6 +237,75 @@ app.get('/api/recommandations/:userId', async (req, res) => {
     } catch (err) {
         console.error("❌ Erreur serveur grave :", err);
         res.status(500).json({ error: "Erreur lors de la création du test." });
+    }
+});
+
+// --- ROUTE : MISE À JOUR DU PROFILAGE ---
+app.post('/api/sauvegarder-resultats', async (req, res) => {
+    try {
+        const { userId, resultats } = req.body;
+
+        const profilComplet = await Profilage.findOne({ user_id: userId });
+        if (!profilComplet) return res.status(404).json({ error: "Profil introuvable" });
+
+        let performances = profilComplet.performances_par_categorie || [];
+        let statsGlobales = profilComplet.statistiques_globales || {
+            total_questions_rencontrees: 0, taux_reussite_global: 0, temps_moyen_global_sec: 0, score_elo: 1000
+        };
+
+        for (let rep of resultats) {
+            const catNom = rep.categories && rep.categories.length > 0 ? rep.categories[0] : "Non catégorisé";
+
+            // On cherche la catégorie, ou on la crée si c'est la première fois
+            let catIndex = performances.findIndex(p => p.nom_categorie === catNom);
+            if (catIndex === -1) {
+                performances.push({
+                    nom_categorie: catNom,
+                    statistiques_categorie: { questions_vues: 0, taux_reussite_categorie: 0, temps_moyen_categorie_sec: 25, niveau_maitrise: 0, poids_recommandation: 0.5 },
+                    questions_rencontrees: []
+                });
+                catIndex = performances.length - 1;
+            }
+
+            let statsCat = performances[catIndex].statistiques_categorie;
+
+            // 🧮 MATHS : Mise à jour de la catégorie (Moyenne glissante)
+            const nvQuestions = statsCat.questions_vues + 1;
+            const valeurReponse = rep.correct ? 100 : 0;
+            statsCat.taux_reussite_categorie = ((statsCat.taux_reussite_categorie * statsCat.questions_vues) + valeurReponse) / nvQuestions;
+            statsCat.questions_vues = nvQuestions;
+            statsCat.niveau_maitrise = statsCat.taux_reussite_categorie / 100; // ex: 80% = 0.80
+
+            // 💾 Ajout de l'historique de la question
+            performances[catIndex].questions_rencontrees.push({
+                question_id: rep.questionId,
+                difficulte_question: rep.difficulte,
+                taux_reussite_question: valeurReponse,
+                historique_tentatives: [{
+                    date_tentative: new Date(),
+                    reussi: rep.correct
+                }]
+            });
+
+            // 🧮 MATHS : Mise à jour du Score ELO Global (+15 ou -15)
+            statsGlobales.total_questions_rencontrees += 1;
+            statsGlobales.score_elo += (rep.correct ? 15 : -15);
+            if (statsGlobales.score_elo < 0) statsGlobales.score_elo = 0;
+        }
+
+        statsGlobales.derniere_activite = new Date();
+
+        // 🚀 On renvoie tout dans MongoDB
+        await Profilage.updateOne(
+            { user_id: userId },
+            { $set: { performances_par_categorie: performances, statistiques_globales: statsGlobales } }
+        );
+
+        res.json({ message: "Profil mis à jour avec le nouveau format JSON !" });
+
+    } catch (err) {
+        console.error("❌ Erreur de sauvegarde :", err);
+        res.status(500).json({ error: "Erreur" });
     }
 });
 
