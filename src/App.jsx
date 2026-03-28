@@ -19,7 +19,7 @@ function App() {
     const [currentQuestion, setCurrentQuestion] = useState(0)
     const [score, setScore] = useState(0)
     const [quizFinished, setQuizFinished] = useState(false)
-    const [loading, setLoading] = useState(true)
+    const [loading, setLoading] = useState(false)
     const [selectedAnswer, setSelectedAnswer] = useState(null)
     const [particles, setParticles] = useState([])
 
@@ -31,13 +31,39 @@ function App() {
     const [chatLoading, setChatLoading] = useState(false)
     const [chatSessionId, setChatSessionId] = useState(null)
     const chatMessagesRef = useRef(null)
+    const [loadingQuiz, setLoadingQuiz] = useState(false);
 
-    useEffect(() => {
+    const lancerTestSurMesure = async () => {
+        if (!currentUser) return;
+
+        setLoadingQuiz(true);
+        try {
+            // On appelle la nouvelle route IA avec l'ID de l'utilisateur (MongoDB utilise _id)
+            const res = await fetch(`${API_URL}/api/recommandations/${currentUser._id}`);
+            if (res.ok) {
+                const data = await res.json();
+                // 🚨 AJOUTE CETTE LIGNE POUR ESPIONNER MONGODB :
+                console.log("🧐 VOICI CE QUE MONGODB RENVOIE :", data[0]);
+                setExercices(data);
+                setCurrentQuestion(0);
+                setScore(0);
+                setQuizFinished(false);
+                setView('quiz');
+            } else {
+                alert("Erreur lors de la génération du test.");
+            }
+        } catch (err) {
+            console.error(err);
+        } finally {
+            setLoadingQuiz(false);
+        }
+    };
+    /*useEffect(() => {
         fetch(`${API_URL}/api/exercices`)
             .then(res => res.json())
             .then(data => { setExercices(data); setLoading(false) })
             .catch(err => { console.error(err); setLoading(false) })
-    }, [])
+    }, [])*/
 
     const handleFormChange = (e) => setFormData({ ...formData, [e.target.name]: e.target.value })
     const handleLoginChange = (e) => setLoginData({ ...loginData, [e.target.name]: e.target.value })
@@ -51,8 +77,9 @@ function App() {
                 body: JSON.stringify(formData)
             })
             if (res.ok) {
-                setCurrentUser({ pseudo: formData.pseudo })
-                setView('home')
+                const data = await res.json(); // 🚨 NOUVEAU : On lit la réponse
+                setCurrentUser(data.user);     // 🚨 NOUVEAU : On sauvegarde le VRAI profil avec son _id
+                setView('home');
             } else {
                 const data = await res.json()
                 alert(data.error || "Erreur lors de l'inscription.")
@@ -201,8 +228,12 @@ function App() {
                     <h1>Salut {currentUser?.pseudo || ""} !</h1>
                     <p className="subtitle">Prêt pour ton entraînement du jour ?</p>
                     <div style={{ marginTop: '40px' }}>
-                        <button className="btn btn-primary" onClick={startQuiz}>
-                            Commencer un test de 10 questions
+                        <button
+                            className="btn btn-primary"
+                            onClick={lancerTestSurMesure}
+                            disabled={loadingQuiz}
+                        >
+                            {loadingQuiz ? "🧠 Création de ton test par l'IA..." : "Commencer le test"}
                         </button>
                         <button className="btn btn-outline" onClick={handleLogout} style={{ marginTop: '20px' }}>
                             Déconnexion
@@ -223,6 +254,12 @@ function App() {
                             <div className="progress-container">
                                 <div className="progress-bar" style={{ width: `${progressPercentage}%` }}></div>
                             </div>
+
+                            {exercices[currentQuestion]?.message_tuteur && (
+                                <div style={{ backgroundColor: '#e0f2fe', color: '#075985', padding: '10px', borderRadius: '5px', marginBottom: '15px', fontStyle: 'italic', fontSize: '14px' }}>
+                                    💡 <strong>Mot du formateur :</strong> {exercices[currentQuestion].message_tuteur}
+                                </div>
+                            )}
 
                             <div className="question-card">
                                 {exercices[currentQuestion]?.consigne}
