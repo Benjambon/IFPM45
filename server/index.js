@@ -36,7 +36,8 @@ const userSchema = new mongoose.Schema({
     genre: String,
     metier: String,
     dateDiplome: Date,
-    anneeEtude: String
+    anneeEtude: String,
+    statistiques: { type: Object, default: {} }
 }, { versionKey: false });
 
 const User = mongoose.model('User', userSchema);
@@ -45,7 +46,8 @@ const exerciceSchema = new mongoose.Schema({
     consigne: String,
     reponse: String,
     proposition: [String],
-    difficulte: Number
+    difficulte: String,
+    categories: [String]
 }, { versionKey: false });
 
 const Exercice = mongoose.model('Exercice', exerciceSchema, 'Exercices');
@@ -110,6 +112,61 @@ app.get('/api/exercices', async (req, res) => {
     } catch (err) {
         console.error("❌ Erreur lors de la récupération des exercices :", err);
         res.status(500).json({ error: err.message });
+    }
+});
+
+// --- NOUVELLE ROUTE : GÉNÉRATION DE TEST SUR MESURE ---
+app.get('/api/recommandations/:userId', async (req, res) => {
+    try {
+        const user = await User.findById(req.params.userId);
+        if (!user) return res.status(404).json({ error: "Utilisateur introuvable" });
+
+        console.log(`🧠 Génération d'un test IA pour ${user.pseudo}...`);
+
+        // Si l'utilisateur est nouveau, on lui donne un profil de base
+        const stats = user.statistiques && Object.keys(user.statistiques).length > 0
+            ? user.statistiques
+            : { niveau_global: "Débutant", historique: "Premier test" };
+
+        const prompt = `
+        Tu es le moteur de recommandation d'une école d'infirmiers.
+        Profil de l'étudiant : ${JSON.stringify(stats)}
+        Génère une série de 5 questions.
+        RÉPONDS UNIQUEMENT AVEC UN OBJET JSON. Format attendu :
+        {
+          "recommandations": [
+            {"difficulte": 1, "quantite": 5, "raison": "Texte court expliquant ce choix à l'étudiant"}
+          ]
+        }`;
+
+        // Appel à Gemini (tu as déjà initialisé 'ai' en haut de ton fichier)
+        const response = await ai.models.generateContent({
+            model: 'gemini-2.5-flash',
+            contents: prompt
+        });
+
+        const texteBrut = response.text.trim().replace(/```json/g, "").replace(/```/g, "");
+        const ordonnanceIA = JSON.parse(texteBrut);
+
+        let serieFinale = [];
+
+        for (const consigne of ordonnanceIA.recommandations) {
+            // Mongoose permet d'utiliser l'agrégation exactement comme le driver natif MongoDB !
+            const questions = await Exercice.aggregate([
+                { $match: { difficulte: consigne.difficulte } }, // Ajoute "type: consigne.type" si tu utilises les catégories
+                { $sample: { size: consigne.quantite } }
+            ]);
+
+            for (let q of questions) {
+                q.message_tuteur = consigne.raison;
+                serieFinale.push(q);
+            }
+        }
+
+        res.json(serieFinale);
+    } catch (err) {
+        console.error("❌ Erreur génération IA :", err);
+        res.status(500).json({ error: "Erreur lors de la création du test sur mesure." });
     }
 });
 
