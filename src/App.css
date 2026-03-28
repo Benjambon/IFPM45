@@ -1,6 +1,7 @@
 @import url('https://fonts.googleapis.com/css2?family=Nunito:wght@400;700;800&display=swap');
 
 :root {
+  color-scheme: light; /* Force le mode clair au niveau du navigateur */
   --green: #58cc02;
   --green-shadow: #58a700;
   --purple:#ad14fa;
@@ -13,12 +14,13 @@
   --gray-bg: #f7f7f7;
   --text-dark: #4b4b4b;
   --text-muted: #afafaf;
+  --vibrant-yellow: #ffea00;
 }
 
 body {
   font-family: 'Nunito', sans-serif;
-  color: var(--text-dark);
-  background-color: #ffffff;
+  color: var(--text-dark) !important; /* Écrase les couleurs par défaut de Vite */
+  background-color: #ffffff !important;
   margin: 0;
   display: flex;
   justify-content: center;
@@ -27,19 +29,20 @@ body {
 
 #root {
   width: 100%;
-  max-width: 500px; /* Interface centrée type mobile */
+  max-width: 500px;
   padding: 20px;
   box-sizing: border-box;
   display: flex;
   flex-direction: column;
 }
 
-/* --- TYPOGRAPHIE --- */
+/* TYPOGRAPHIE */
 h1 {
   font-size: 28px;
   font-weight: 800;
   text-align: center;
   margin-bottom: 10px;
+  color: var(--text-dark);
 }
 
 h2 {
@@ -47,6 +50,7 @@ h2 {
   font-weight: 700;
   text-align: center;
   margin-bottom: 20px;
+  color: var(--text-dark);
 }
 
 .subtitle {
@@ -57,7 +61,7 @@ h2 {
   font-weight: 700;
 }
 
-/* --- BOUTONS (Effet 3D Duolingo) --- */
+/* BOUTONS */
 .btn {
   width: 100%;
   padding: 16px;
@@ -78,7 +82,15 @@ h2 {
   box-shadow: none !important;
 }
 
+/* Le bouton principal devient violet */
 .btn-primary {
+  background-color: var(--purple);
+  color: white;
+  box-shadow: 0 4px 0 var(--purple-shadow);
+}
+
+/* Nouvelle classe pour les bonnes réponses */
+.btn-success {
   background-color: var(--green);
   color: white;
   box-shadow: 0 4px 0 var(--green-shadow);
@@ -118,7 +130,7 @@ h2 {
   text-align: left;
 }
 
-/* --- FORMULAIRES --- */
+/* FORMULAIRES */
 .form-group {
   display: flex;
   flex-direction: column;
@@ -146,7 +158,7 @@ h2 {
   background-color: white;
 }
 
-/* --- JEU & PROGRESSION --- */
+/* JEU & PROGRESSION */
 .progress-container {
   width: 100%;
   height: 16px;
@@ -174,4 +186,164 @@ h2 {
   display: flex;
   flex-direction: column;
   gap: 12px;
+}
+
+/* CHATBOT BOTTOM SHEET */
+@keyframes slideUp {
+  from { transform: translateY(100%); }
+  to { transform: translateY(0); }
+}
+
+.chatbot-overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: rgba(0, 0, 0, 0.4);
+  z-index: 100;
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+}
+
+.chatbot-sheet {
+  width: 100%;
+  max-width: 500px;
+  max-height: 75vh;
+  background: white;
+  border-radius: 24px 24px 0 0;
+  display: flex;
+  flex-direction: column;
+  animation: slideUp 0.3s ease-out;
+  overflow: hidden;
+}
+
+.chatbot-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 16px 20px;
+  border-bottom: 2px solid var(--gray-light);
+}
+
+.chatbot-header span {
+  font-size: 18px;
+  font-weight: 800;
+  color: var(--purple);
+}
+
+.chatbot-header .btn {
+  width: auto;
+  padding: 10px 20px;
+  font-size: 14px;
+  margin-bottom: 0;
+}
+
+.chatbot-messages {
+  flex: 1;
+  overflow-y: auto;
+  padding: 16px 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  min-height: 150px;
+  max-height: 40vh;
+}
+
+.chatbot-message-bot {
+  background: var(--gray-bg);
+  color: var(--text-dark);
+  padding: 12px 16px;
+  border-radius: 16px 16px 16px 4px;
+  font-size: 15px;
+  font-weight: 700;
+  line-height: 1.5;
+  align-self: flex-start;
+  max-width: 85%;
+  white-space: pre-wrap;
+}
+
+.chatbot-message-user {
+  background: var(--purple);
+  color: white;
+  padding: 12px 16px;
+  border-radius: 16px 16px 4px 16px;
+  font-size: 15px;
+  font-weight: 700;
+  line-height: 1.5;
+  align-self: flex-end;
+  max-width: 85%;
+}
+
+.chatbot-typing {
+  background: var(--gray-bg);
+  padding: 14px 18px;
+  border-radius: 16px 16px 16px 4px;
+  align-self: flex-start;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.chatbot-spinner {
+  width: 20px;
+  height: 20px;
+  border: 3px solid var(--gray-light);
+  border-top-color: var(--primary, #4f46e5);
+  border-radius: 50%;
+  animation: chatbot-spin 0.8s linear infinite;
+}
+
+@keyframes chatbot-spin {
+  to { transform: rotate(360deg); }
+}
+
+.chatbot-input-row {
+  display: flex;
+  gap: 10px;
+  padding: 12px 20px 20px;
+  border-top: 2px solid var(--gray-light);
+}
+
+.chatbot-input-row input {
+  flex: 1;
+  padding: 14px 16px;
+  border: 2px solid var(--gray-light);
+  border-radius: 16px;
+  font-size: 15px;
+  font-family: inherit;
+  font-weight: 700;
+  color: var(--text-dark);
+  background: var(--gray-bg);
+  box-sizing: border-box;
+}
+
+.chatbot-input-row input:focus {
+  outline: none;
+  border-color: var(--purple);
+  background: white;
+}
+
+.chatbot-input-row button {
+  padding: 14px 20px;
+  border-radius: 16px;
+  border: none;
+  background: var(--purple);
+  color: white;
+  font-size: 15px;
+  font-weight: 800;
+  cursor: pointer;
+  box-shadow: 0 4px 0 var(--purple-shadow);
+  transition: transform 0.1s, box-shadow 0.1s;
+}
+
+.chatbot-input-row button:active {
+  transform: translateY(4px);
+  box-shadow: none;
+}
+
+.chatbot-input-row button:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
 }
