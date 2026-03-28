@@ -311,12 +311,25 @@ h2 {
 
 .chatbot-typing {
   background: var(--gray-bg);
-  color: var(--text-muted);
-  padding: 12px 16px;
+  padding: 14px 18px;
   border-radius: 16px 16px 16px 4px;
-  font-size: 15px;
-  font-weight: 700;
   align-self: flex-start;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.chatbot-spinner {
+  width: 20px;
+  height: 20px;
+  border: 3px solid var(--gray-light);
+  border-top-color: var(--primary, #4f46e5);
+  border-radius: 50%;
+  animation: chatbot-spin 0.8s linear infinite;
+}
+
+@keyframes chatbot-spin {
+  to { transform: rotate(360deg); }
 }
 
 .chatbot-input-row {
