@@ -1,8 +1,8 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import './App.css'
 
-// 🌍 L'URL de ton serveur Render centralisée ici
-const API_URL = 'https://ifpm-serveur.onrender.com'
+// 🌍 L'URL du serveur : localhost en dev, Render en prod
+const API_URL = import.meta.env.DEV ? 'http://localhost:5000' : 'https://ifpm-serveur.onrender.com'
 
 function App() {
     const [view, setView] = useState('landing')
@@ -19,6 +19,14 @@ function App() {
     const [quizFinished, setQuizFinished] = useState(false)
     const [loading, setLoading] = useState(true)
     const [selectedAnswer, setSelectedAnswer] = useState(null)
+
+    // --- ÉTATS DU CHATBOT ---
+    const [showChatbot, setShowChatbot] = useState(false)
+    const [chatMessages, setChatMessages] = useState([])
+    const [chatInput, setChatInput] = useState('')
+    const [chatLoading, setChatLoading] = useState(false)
+    const [chatSessionId, setChatSessionId] = useState(null)
+    const chatMessagesRef = useRef(null)
 
     useEffect(() => {
         fetch(`${API_URL}/api/exercices`)
@@ -72,15 +80,82 @@ function App() {
         setView('landing')
     }
 
-    const handleAnswer = (propo) => {
-        // Empêcher de cliquer plusieurs fois
+    const handleAnswer = async (propo) => {
         if (selectedAnswer) return;
 
         setSelectedAnswer(propo);
         if (propo === exercices[currentQuestion].reponse) {
             setScore(score + 1);
+        } else {
+            // Mauvaise réponse → ouvrir le chatbot
+            const newSessionId = `chat_${Date.now()}_${Math.random().toString(36).slice(2)}`;
+            setChatSessionId(newSessionId);
+            setChatMessages([]);
+            setChatLoading(true);
+            setShowChatbot(true);
+
+            try {
+                const res = await fetch(`${API_URL}/api/chat`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        sessionId: newSessionId,
+                        exercice: {
+                            consigne: exercices[currentQuestion].consigne,
+                            reponse: exercices[currentQuestion].reponse,
+                            mauvaiseReponse: propo
+                        }
+                    })
+                });
+                const data = await res.json();
+                setChatMessages([{ role: 'bot', text: data.reply }]);
+            } catch (err) {
+                setChatMessages([{ role: 'bot', text: "Désolé, je n'ai pas pu me connecter. La bonne réponse est : " + exercices[currentQuestion].reponse }]);
+            }
+            setChatLoading(false);
         }
     }
+
+    const sendChatMessage = async () => {
+        if (!chatInput.trim() || chatLoading) return;
+
+        const userMsg = chatInput.trim();
+        setChatInput('');
+        setChatMessages(prev => [...prev, { role: 'user', text: userMsg }]);
+        setChatLoading(true);
+
+        try {
+            const res = await fetch(`${API_URL}/api/chat`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ sessionId: chatSessionId, message: userMsg })
+            });
+            const data = await res.json();
+            setChatMessages(prev => [...prev, { role: 'bot', text: data.reply }]);
+        } catch (err) {
+            setChatMessages(prev => [...prev, { role: 'bot', text: "Erreur de connexion, réessaie." }]);
+        }
+        setChatLoading(false);
+    }
+
+    const handleChatKeyDown = (e) => {
+        if (e.key === 'Enter') sendChatMessage();
+    }
+
+    const handleCloseChatbot = () => {
+        setShowChatbot(false);
+        setChatMessages([]);
+        setChatSessionId(null);
+        setChatInput('');
+        handleNextQuestion();
+    }
+
+    // Auto-scroll des messages du chatbot
+    useEffect(() => {
+        if (chatMessagesRef.current) {
+            chatMessagesRef.current.scrollTop = chatMessagesRef.current.scrollHeight;
+        }
+    }, [chatMessages, chatLoading])
     const handleNextQuestion = () => {
         const next = currentQuestion + 1;
         if (next < exercices.length) {
@@ -97,6 +172,9 @@ function App() {
         setCurrentQuestion(0);
         setScore(0);
         setSelectedAnswer(null);
+        setShowChatbot(false);
+        setChatMessages([]);
+        setChatSessionId(null);
         setView('home');
     }
 
@@ -249,12 +327,44 @@ function App() {
                                 })}
                             </div>
 
-                            {/* Affichage du bouton "Suivant" uniquement si une réponse est sélectionnée */}
-                            {selectedAnswer && (
+                            {/* Bouton "Suivant" uniquement si bonne réponse */}
+                            {selectedAnswer && selectedAnswer === exercices[currentQuestion]?.reponse && (
                                 <div style={{ marginTop: '30px' }}>
                                     <button className="btn btn-secondary" onClick={handleNextQuestion}>
                                         {currentQuestion + 1 < exercices.length ? "Prochaine question" : "Voir les résultats"}
                                     </button>
+                                </div>
+                            )}
+
+                            {/* Chatbot bottom sheet sur mauvaise réponse */}
+                            {showChatbot && (
+                                <div className="chatbot-overlay">
+                                    <div className="chatbot-sheet">
+                                        <div className="chatbot-header">
+                                            <span>Prof assistant</span>
+                                            <button className="btn btn-primary" onClick={handleCloseChatbot}>J'ai compris</button>
+                                        </div>
+                                        <div className="chatbot-messages" ref={chatMessagesRef}>
+                                            {chatMessages.map((msg, i) => (
+                                                <div key={i} className={msg.role === 'user' ? 'chatbot-message-user' : 'chatbot-message-bot'}>
+                                                    {msg.text}
+                                                </div>
+                                            ))}
+                                            {chatLoading && <div className="chatbot-typing">...</div>}
+                                        </div>
+                                        <div className="chatbot-input-row">
+                                            <input
+                                                value={chatInput}
+                                                onChange={e => setChatInput(e.target.value)}
+                                                onKeyDown={handleChatKeyDown}
+                                                placeholder="Pose une question..."
+                                                disabled={chatLoading}
+                                            />
+                                            <button onClick={sendChatMessage} disabled={chatLoading || !chatInput.trim()}>
+                                                Envoyer
+                                            </button>
+                                        </div>
+                                    </div>
                                 </div>
                             )}
                         </>
