@@ -386,15 +386,15 @@ function App() {
                     {userStats ? (
                         <div style={{ marginTop: '20px', textAlign: 'center' }}>
                             <div style={{ padding: '20px', backgroundColor: 'var(--gray-bg)', borderRadius: '16px', marginBottom: '20px' }}>
+                                <h3 style={{ margin: '0 0 10px 0', color: 'var(--text-muted)' }}>Score ELO 🏆</h3>
+                                <p style={{ fontSize: '32px', fontWeight: '800', color: 'var(--blue)', margin: 0 }}>
+                                    {userStats.score_elo}
+                                </p>
+                            </div>
+                            <div style={{ padding: '20px', backgroundColor: 'var(--gray-bg)', borderRadius: '16px', marginBottom: '20px' }}>
                                 <h3 style={{ margin: '0 0 10px 0', color: 'var(--text-muted)' }}>Taux de réussite</h3>
                                 <p style={{ fontSize: '32px', fontWeight: '800', color: 'var(--green)', margin: 0 }}>
                                     {userStats.taux_reussite}%
-                                </p>
-                            </div>
-                            <div style={{ padding: '20px', backgroundColor: 'var(--gray-bg)', borderRadius: '16px' }}>
-                                <h3 style={{ margin: '0 0 10px 0', color: 'var(--text-muted)' }}>Temps de réponse moyen</h3>
-                                <p style={{ fontSize: '32px', fontWeight: '800', color: 'var(--blue)', margin: 0 }}>
-                                    {userStats.temps_moyen} sec
                                 </p>
                             </div>
                         </div>

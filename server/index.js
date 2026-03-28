@@ -151,27 +151,48 @@ app.get('/api/exercices', async (req, res) => {
     }
 });
 
-// ROUTE : RÉCUPÉRATION DES STATISTIQUES UTILISATEUR
-// ROUTE : RÉCUPÉRATION DES STATISTIQUES UTILISATEUR
+// --- ROUTE : RÉCUPÉRATION DES STATISTIQUES UTILISATEUR ---
 app.get('/api/statistiques/:userId', async (req, res) => {
     try {
-        const stats = await Profilage.findOne({ user_id: req.params.userId });
+        // 1. On cherche d'abord l'utilisateur pour obtenir son VRAI format d'ID (ObjectId)
+        const user = await User.findById(req.params.userId);
+        if (!user) return res.status(404).json({ error: "Utilisateur introuvable" });
 
-        // Au lieu de renvoyer une erreur 404, on renvoie des stats par défaut (0)
-        // si l'utilisateur n'a pas encore de profil de statistiques
-        if (!stats || !stats.statistiques_globales) {
-            return res.json({
-                taux_reussite: 0,
-                temps_moyen: 0
+        // 2. On cherche le profilage de manière sécurisée
+        const stats = await Profilage.findOne({ user_id: user._id });
+
+        if (!stats) {
+            return res.json({ taux_reussite: 0, temps_moyen: 0, score_elo: 1000 });
+        }
+
+        // 3. Extraction et calcul sécurisé
+        let taux = stats.statistiques_globales?.taux_reussite_global || 0;
+        let temps = stats.statistiques_globales?.temps_moyen_global_sec || 0;
+        let elo = stats.statistiques_globales?.score_elo || 1000;
+
+        // Si le taux global est à 0 (cas des vieux comptes), on le recalcule en direct !
+        if (taux === 0 && stats.performances_par_categorie && stats.performances_par_categorie.length > 0) {
+            let totalQuestions = 0;
+            let totalReussites = 0;
+            stats.performances_par_categorie.forEach(cat => {
+                const q = cat.statistiques_categorie?.questions_vues || 0;
+                const t = cat.statistiques_categorie?.taux_reussite_categorie || 0;
+                totalQuestions += q;
+                totalReussites += (t / 100) * q;
             });
+            if (totalQuestions > 0) {
+                taux = Math.round((totalReussites / totalQuestions) * 100);
+            }
         }
 
         res.json({
-            taux_reussite: stats.statistiques_globales.taux_reussite_global,
-            temps_moyen: stats.statistiques_globales.temps_moyen_global_sec
+            taux_reussite: taux,
+            temps_moyen: Math.round(temps),
+            score_elo: elo
         });
+
     } catch (err) {
-        console.error("Erreur serveur :", err);
+        console.error("❌ Erreur serveur statistiques :", err);
         res.status(500).json({ error: "Erreur lors de la récupération des statistiques." });
     }
 });
@@ -222,22 +243,25 @@ app.get('/api/recommandations/:userId', async (req, res) => {
 
         let ordonnanceIA;
 
+        // 🚨 LE FILET DE SÉCURITÉ ET L'APPEL OPENAI
         try {
-            const response = await ai.models.generateContent({
-                model: 'gemini-2.5-flash',
-                contents: prompt
+            const response = await ai.chat.completions.create({
+                model: "gpt-4o-mini",
+                response_format: { type: "json_object" }, // Oblige l'IA à répondre en pur JSON
+                messages: [
+                    { role: "system", content: "Tu es un assistant strict qui ne répond qu'en JSON." },
+                    { role: "user", content: prompt }
+                ]
             });
-            const texteBrut = response.text.trim().replace(/```json/g, "").replace(/```/g, "");
-            ordonnanceIA = JSON.parse(texteBrut);
-            console.log("Réponse IA reçue avec succès.");
+
+            ordonnanceIA = JSON.parse(response.choices[0].message.content);
+            console.log("✅ Réponse OpenAI reçue avec succès.");
 
         } catch (erreurIA) {
-            console.warn("Gemini est surchargé (Erreur Quota). Activation du mode dégradé !");
-
+            console.warn("⚠️ OpenAI est surchargé. Activation du mode dégradé !", erreurIA.message);
             const serieSecours = await Exercice.aggregate([{ $sample: { size: nbQuestions } }]);
-
             for (let q of serieSecours) {
-                q.message_tuteur = "Série d'entraînement générale (Notre IA formateur fait une petite pause café).";
+                q.message_tuteur = "Série d'entraînement générale (Notre IA formateur fait une petite pause café ☕).";
             }
             return res.json(serieSecours);
         }
