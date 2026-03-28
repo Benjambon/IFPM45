@@ -19,7 +19,6 @@ function App() {
     const [quizFinished, setQuizFinished] = useState(false)
     const [loading, setLoading] = useState(true)
     const [selectedAnswer, setSelectedAnswer] = useState(null)
-    const [particles, setParticles] = useState([]) // Stocke les étoiles
 
     // --- ÉTATS DU CHATBOT ---
     const [showChatbot, setShowChatbot] = useState(false)
@@ -81,31 +80,12 @@ function App() {
         setView('landing')
     }
 
-    const handleAnswer = (propo, e) => {
     const handleAnswer = async (propo) => {
         if (selectedAnswer) return;
 
         setSelectedAnswer(propo);
         if (propo === exercices[currentQuestion].reponse) {
             setScore(score + 1);
-            // Génération de 10 étoiles avec des trajectoires plus larges
-            const newParticles = Array.from({ length: 10 }).map((_, i) => ({
-                id: Date.now() + i,
-                x: e.clientX,
-                y: e.clientY,
-                tx: `${(Math.random() - 0.5) * 500}px`, // Dispersion initiale élargie
-                tyUp: `${-(Math.random() * 200 + 100)}px`, // Montée légèrement plus haute
-                txEnd: `${(Math.random() - 0.5) * 1000}px`, // Écart final beaucoup plus large
-                rotHalf: `${Math.random() * 180}deg`,
-                rotFull: `${Math.random() * 360 + 180}deg`
-            }));
-
-            setParticles(newParticles);
-
-            // Le délai de nettoyage est allongé à 2.5 secondes
-            setTimeout(() => {
-                setParticles([]);
-            }, 2500);
         } else {
             // Mauvaise réponse → ouvrir le chatbot
             const newSessionId = `chat_${Date.now()}_${Math.random().toString(36).slice(2)}`;
@@ -204,32 +184,14 @@ function App() {
 
     return (
         <div className="App">
-            {/* RENDU DES PARTICULES (ÉTOILES) */}
-            {particles.map(p => (
-                <div
-                    key={p.id}
-                    className="star-particle"
-                    style={{
-                        left: p.x,
-                        top: p.y,
-                        '--tx': p.tx,
-                        '--ty-up': p.tyUp,
-                        '--tx-end': p.txEnd,
-                        '--rot-half': p.rotHalf,
-                        '--rot-full': p.rotFull
-                    }}
-                >
-                    ★
-                </div>
-            ))}
 
             {view === 'landing' && (
                 <div>
                     <h1>IFPM Training</h1>
                     <p className="subtitle">Maîtrise tes calculs de doses.</p>
                     <div style={{ marginTop: '50px' }}>
-                        <button className="btn btn-primary" onClick={() => setView('register')}>S'inscrire</button>
-                        <button className="btn btn-outline" onClick={() => setView('login')}>Se connecter</button>
+                        <button className="btn btn-primary" onClick={() => setView('register')}>C'est parti !</button>
+                        <button className="btn btn-outline" onClick={() => setView('login')}>J'ai déjà un compte</button>
                     </div>
                 </div>
             )}
@@ -341,7 +303,7 @@ function App() {
                                     if (selectedAnswer) {
                                         if (isCorrectAnswer) {
                                             // La bonne réponse en vert
-                                            btnClass = "btn btn-success";
+                                            btnClass = "btn btn-primary";
                                         } else if (isSelected && !isCorrectAnswer) {
                                             // La mauvaise réponse cliquée en rouge
                                             btnClass = "btn btn-danger";
@@ -356,7 +318,7 @@ function App() {
                                             key={i}
                                             className={btnClass}
                                             style={btnStyle}
-                                            onClick={(e) => handleAnswer(propo, e)}
+                                            onClick={() => handleAnswer(propo)}
                                             disabled={!!selectedAnswer}
                                         >
                                             {propo}
@@ -421,6 +383,5 @@ function App() {
         </div>
     )
 }
-
 
 export default App
