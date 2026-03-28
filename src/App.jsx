@@ -81,10 +81,7 @@ function App() {
         setView('landing')
     }
 
-    const handleAnswer = (propo, e) => {
-    const handleAnswer = async (propo) => {
-        if (selectedAnswer) return;
-
+    const handleAnswer = async (propo, e) => {        if (selectedAnswer) return;
         setSelectedAnswer(propo);
         if (propo === exercices[currentQuestion].reponse) {
             setScore(score + 1);
@@ -421,7 +418,7 @@ function App() {
         </div>
     )
 }
-}
+
 
 
 export default App
