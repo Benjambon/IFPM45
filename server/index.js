@@ -48,11 +48,14 @@ const userSchema = new mongoose.Schema({
 
 const User = mongoose.model('User', userSchema);
 
+// 🔄 MISE À JOUR : Le nouveau schéma pour coller parfaitement à ta base MongoDB
 const exerciceSchema = new mongoose.Schema({
-    consigne: String,
-    reponse: String,
+    path: String,
+    consignes: String,
+    reponses: String, // Contient l'explication détaillée du calcul
     proposition: [String],
-    difficulte: String,
+    proposition_correct: String, // La réponse courte attendue
+    difficulte: String, // C'est maintenant un String ("Difficile") et plus un Number
     categories: [String]
 }, { versionKey: false });
 
@@ -121,7 +124,11 @@ app.post('/api/login', async (req, res) => {
 
 app.get('/api/exercices', async (req, res) => {
     try {
-        const exercices = await Exercice.find();
+        const limit = parseInt(req.query.limit) || 20
+        const exercices = await Exercice.aggregate([
+            { $match: { 'proposition.0': { $exists: true } } },
+            { $sample: { size: limit } }
+        ]);
         console.log(`📡 Envoi de ${exercices.length} exercices au frontend`);
         res.json(exercices);
     } catch (err) {
@@ -228,7 +235,7 @@ app.post('/api/chat', async (req, res) => {
 
         let prompt;
         if (exercice) {
-            prompt = `L'étudiant a répondu "${exercice.mauvaiseReponse}" à la question : "${exercice.consigne}". La bonne réponse est "${exercice.reponse}". Explique pourquoi c'est la bonne réponse et comment l'obtenir, de façon claire et pédagogique.`;
+            prompt = `L'étudiant a répondu "${exercice.mauvaiseReponse}" à la question : "${exercice.consigne}". Explique brièvement et avec bienveillance pourquoi cette réponse est incorrecte. Donne uniquement une explication pédagogique simple, sans révéler ni répéter la bonne réponse.`;
         } else {
             prompt = message;
         }
