@@ -62,10 +62,14 @@ const exerciceSchema = new mongoose.Schema({
 
 const Exercice = mongoose.model('Exercice', exerciceSchema, 'Exercices');
 
-// --- NOUVEAU : Schéma pour lire ton JSON de profilage ---
+// --- LE NOUVEAU SCHÉMA PROFILAGE ---
 const profilageSchema = new mongoose.Schema({
-    profil_utilisateur: Object
-}, { collection: 'Profilage', versionKey: false }); // On cible exactement ta collection
+    user_id: { type: mongoose.Schema.Types.ObjectId, ref: 'User' }, // Le vrai ID de l'utilisateur !
+    anneeEtude: String,
+    statistiques_globales: Object,
+    embedding_utilisateur: [Number],
+    performances_par_categorie: [Object]
+}, { collection: 'Profilage', versionKey: false });
 
 const Profilage = mongoose.model('Profilage', profilageSchema);
 
@@ -84,6 +88,22 @@ app.post('/api/register', async (req, res) => {
 
         const newUser = new User(userData);
         await newUser.save();
+
+        // 🚨 NOUVEAU : Création du Profilage vierge avec ton nouveau format JSON
+        const newProfilage = new Profilage({
+            user_id: newUser._id,
+            anneeEtude: newUser.anneeEtude || "1",
+            statistiques_globales: {
+                total_questions_rencontrees: 0,
+                taux_reussite_global: 0,
+                temps_moyen_global_sec: 0,
+                score_elo: 1000,
+                derniere_activite: new Date()
+            },
+            embedding_utilisateur: [],
+            performances_par_categorie: [] // Se remplira au fur et à mesure qu'il jouera
+        });
+        await newProfilage.save();
 
         // 🚨 NOUVEAU : On renvoie l'utilisateur créé (sans le mot de passe) pour avoir son _id !
         const userWithoutPassword = newUser.toObject();
@@ -147,16 +167,32 @@ app.get('/api/recommandations/:userId', async (req, res) => {
         const nbQuestions = 10;
         console.log(`🧠 Demande d'un test IA de ${nbQuestions} questions pour ${user.pseudo}...`);
 
-        const profilComplet = await Profilage.findOne({ "profil_utilisateur.id_utilisateur": "USR-74892" });
+        // 🚨 RÉCUPÉRATION DU PROFIL
+        const profilComplet = await Profilage.findOne({ user_id: user._id });
 
-        let stats = { niveau_global: "Débutant", historique: "Premier test" };
-        if (profilComplet && profilComplet.profil_utilisateur && profilComplet.profil_utilisateur.competences) {
-            stats = profilComplet.profil_utilisateur.competences;
+        let statsPourIA = {};
+        if (profilComplet && profilComplet.performances_par_categorie) {
+            profilComplet.performances_par_categorie.forEach(perf => {
+                statsPourIA[perf.nom_categorie] = {
+                    questions_vues: perf.statistiques_categorie.questions_vues,
+                    taux_reussite: perf.statistiques_categorie.taux_reussite_categorie,
+                    niveau_maitrise: perf.statistiques_categorie.niveau_maitrise
+                };
+            });
+        }
+
+        // 🧠 GESTION DU NOUVEAU JOUEUR (Le Démarrage à Froid)
+        let contexteEtudiant = "";
+        if (Object.keys(statsPourIA).length === 0) {
+            contexteEtudiant = "C'est un TOUT NOUVEL étudiant. Son profil est vide. Génère un test de positionnement varié (mélange plusieurs catégories différentes) de niveau 'Facile' ou 'Moyenne' pour évaluer son niveau de base.";
+        } else {
+            contexteEtudiant = `Voici les statistiques de l'étudiant par catégorie : ${JSON.stringify(statsPourIA)}. Analyse ses lacunes (taux de réussite faible) et propose des questions ciblées pour le faire progresser.`;
         }
 
         const prompt = `
         Tu es le moteur de recommandation d'une école d'infirmiers.
-        Voici les compétences de l'étudiant : ${JSON.stringify(stats)}
+        ${contexteEtudiant}
+        
         Génère une recommandation pour EXACTEMENT ${nbQuestions} questions.
         RÈGLES VITALES :
         1. "difficulte" DOIT être "Facile", "Moyenne" ou "Difficile".
@@ -210,6 +246,104 @@ app.get('/api/recommandations/:userId', async (req, res) => {
     } catch (err) {
         console.error("❌ Erreur serveur grave :", err);
         res.status(500).json({ error: "Erreur lors de la création du test." });
+    }
+});
+
+// --- NOUVELLE ROUTE : SAUVEGARDE DES RÉSULTATS DANS LE PROFILAGE ---
+app.post('/api/sauvegarder-resultats', async (req, res) => {
+    try {
+        const { userId, resultats } = req.body;
+
+        // 🚨 SÉCURITÉ 1 : On vérifie que React envoie bien les résultats
+        if (!resultats || resultats.length === 0) {
+            console.log("⚠️ Attention : React a envoyé un tableau de résultats vide !");
+            return res.status(400).json({ error: "Aucun résultat à sauvegarder." });
+        }
+
+        let profilComplet = await Profilage.findOne({ user_id: userId });
+
+        // 🚨 SÉCURITÉ 2 : Si c'est un vieux compte de test sans profil, on le crée à la volée !
+        if (!profilComplet) {
+            console.log("🛠️ Ancien compte détecté : Création d'un profil vierge...");
+            profilComplet = new Profilage({
+                user_id: userId,
+                anneeEtude: "1",
+                statistiques_globales: { total_questions_rencontrees: 0, taux_reussite_global: 0, temps_moyen_global_sec: 0, score_elo: 1000 },
+                embedding_utilisateur: [],
+                performances_par_categorie: []
+            });
+            await profilComplet.save();
+        }
+
+        let performances = profilComplet.performances_par_categorie || [];
+        let statsGlobales = profilComplet.statistiques_globales || {
+            total_questions_rencontrees: 0, taux_reussite_global: 0, temps_moyen_global_sec: 0, score_elo: 1000
+        };
+
+        for (let rep of resultats) {
+            const catNom = rep.categories && rep.categories.length > 0 ? rep.categories[0] : "Non catégorisé";
+
+            let catIndex = performances.findIndex(p => p.nom_categorie === catNom);
+            if (catIndex === -1) {
+                performances.push({
+                    nom_categorie: catNom,
+                    statistiques_categorie: { questions_vues: 0, taux_reussite_categorie: 0, temps_moyen_categorie_sec: 25, niveau_maitrise: 0, poids_recommandation: 0.5 },
+                    questions_rencontrees: []
+                });
+                catIndex = performances.length - 1;
+            }
+
+            let statsCat = performances[catIndex].statistiques_categorie;
+
+            // 🧮 MATHS : Mise à jour de la catégorie
+            const nvQuestions = statsCat.questions_vues + 1;
+            const valeurReponse = rep.correct ? 100 : 0;
+            statsCat.taux_reussite_categorie = ((statsCat.taux_reussite_categorie * statsCat.questions_vues) + valeurReponse) / nvQuestions;
+            statsCat.questions_vues = nvQuestions;
+            statsCat.niveau_maitrise = statsCat.taux_reussite_categorie / 100;
+
+            // Mise à jour de l'historique de la question
+            let qRecontreIndex = performances[catIndex].questions_rencontrees.findIndex(q => q.question_id && q.question_id.toString() === rep.questionId);
+            if (qRecontreIndex === -1) {
+                performances[catIndex].questions_rencontrees.push({
+                    question_id: rep.questionId,
+                    difficulte_question: rep.difficulte,
+                    nb_tentatives_total: 0,
+                    taux_reussite_question: 0,
+                    historique_tentatives: []
+                });
+                qRecontreIndex = performances[catIndex].questions_rencontrees.length - 1;
+            }
+
+            let qRencontre = performances[catIndex].questions_rencontrees[qRecontreIndex];
+            qRencontre.nb_tentatives_total += 1;
+            qRencontre.taux_reussite_question = ((qRencontre.taux_reussite_question * (qRencontre.nb_tentatives_total - 1)) + valeurReponse) / qRencontre.nb_tentatives_total;
+
+            qRencontre.historique_tentatives.push({
+                date_tentative: new Date(),
+                reussi: rep.correct
+            });
+
+            // 🧮 MATHS : Mise à jour du ELO Global
+            statsGlobales.total_questions_rencontrees += 1;
+            statsGlobales.score_elo += (rep.correct ? 15 : -15);
+            if (statsGlobales.score_elo < 0) statsGlobales.score_elo = 0;
+        }
+
+        statsGlobales.derniere_activite = new Date();
+
+        // 🚀 Sauvegarde finale MongoDB
+        await Profilage.updateOne(
+            { user_id: userId },
+            { $set: { performances_par_categorie: performances, statistiques_globales: statsGlobales } }
+        );
+
+        console.log(`💾 Profil mis à jour pour l'utilisateur ${userId} ! Nouveau ELO : ${statsGlobales.score_elo}`);
+        res.json({ message: "Profil mis à jour avec le nouveau format JSON !" });
+
+    } catch (err) {
+        console.error("❌ Erreur de sauvegarde :", err);
+        res.status(500).json({ error: "Erreur lors de la sauvegarde du profil." });
     }
 });
 
