@@ -3,7 +3,7 @@ import mongoose from 'mongoose';
 import cors from 'cors';
 import 'dotenv/config';
 import bcrypt from 'bcrypt';
-import { GoogleGenAI } from '@google/genai';
+import OpenAI from 'openai';
 
 const app = express();
 
@@ -12,7 +12,8 @@ app.use(cors());
 app.use(express.json());
 
 // 🚨 CORRECTION CRUCIALE : On initialise l'IA et les sessions du chatbot tout en haut !
-const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
+
+const ai = new OpenAI({ apiKey: process.env.API_KEY });
 const chatSessions = new Map();
 
 // --- 1. CONNEXION SÉCURISÉE ---
