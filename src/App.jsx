@@ -2,7 +2,6 @@ import { useState, useEffect, useRef } from 'react'
 import confetti from 'canvas-confetti'
 import './App.css'
 
-// L'URL du serveur : localhost en dev, Render en prod
 const API_URL = import.meta.env.DEV ? 'http://localhost:5000' : 'https://ifpm-serveur.onrender.com'
 
 function App() {
@@ -20,6 +19,7 @@ function App() {
     const [quizFinished, setQuizFinished] = useState(false)
     const [loading, setLoading] = useState(false)
     const [selectedAnswer, setSelectedAnswer] = useState(null)
+    const [userStats, setUserStats] = useState(null)
 
     // ÉTATS DU CHATBOT
     const [showChatbot, setShowChatbot] = useState(false)
@@ -28,19 +28,17 @@ function App() {
     const [chatLoading, setChatLoading] = useState(false)
     const [chatSessionId, setChatSessionId] = useState(null)
     const chatMessagesRef = useRef(null)
-    const [loadingQuiz, setLoadingQuiz] = useState(false);
+    const [loadingQuiz, setLoadingQuiz] = useState(false)
 
     const lancerTestSurMesure = async () => {
         if (!currentUser) return;
 
         setLoadingQuiz(true);
         try {
-            // On appelle la nouvelle route IA avec l'ID de l'utilisateur (MongoDB utilise _id)
             const res = await fetch(`${API_URL}/api/recommandations/${currentUser._id}`);
             if (res.ok) {
                 const data = await res.json();
-                // 🚨 AJOUTE CETTE LIGNE POUR ESPIONNER MONGODB :
-                console.log("🧐 VOICI CE QUE MONGODB RENVOIE :", data[0]);
+                console.log("Données reçues de la base :", data[0]);
                 setExercices(data);
                 setCurrentQuestion(0);
                 setScore(0);
@@ -55,12 +53,6 @@ function App() {
             setLoadingQuiz(false);
         }
     };
-    /*useEffect(() => {
-        fetch(`${API_URL}/api/exercices`)
-            .then(res => res.json())
-            .then(data => { setExercices(data); setLoading(false) })
-            .catch(err => { console.error(err); setLoading(false) })
-    }, [])*/
 
     const handleFormChange = (e) => setFormData({ ...formData, [e.target.name]: e.target.value })
     const handleLoginChange = (e) => setLoginData({ ...loginData, [e.target.name]: e.target.value })
@@ -74,8 +66,8 @@ function App() {
                 body: JSON.stringify(formData)
             })
             if (res.ok) {
-                const data = await res.json(); // 🚨 NOUVEAU : On lit la réponse
-                setCurrentUser(data.user);     // 🚨 NOUVEAU : On sauvegarde le VRAI profil avec son _id
+                const data = await res.json();
+                setCurrentUser(data.user);
                 setView('home');
             } else {
                 const data = await res.json()
@@ -115,12 +107,8 @@ function App() {
         if (propo === exercices[currentQuestion].proposition_correct) {
             setScore(score + 1);
 
-            // 🌟 MODIFICATION ICI : Calcul de la position du bouton cliqué
-            // e.target est le bouton sur lequel l'utilisateur a cliqué
             const rect = e.target.getBoundingClientRect();
 
-            // On calcule le centre du bouton en coordonnées normalisées (entre 0 et 1)
-            // car canvas-confetti utilise ce format pour 'origin'.
             const originX = (rect.left + rect.width / 2) / window.innerWidth;
             const originY = (rect.top + rect.height / 2) / window.innerHeight;
 
@@ -129,7 +117,7 @@ function App() {
                 ticks: 50,
                 gravity: 0,
                 decay: 0.94,
-                startVelocity: 25, // Légèrement réduit pour que ça ne parte pas trop loin du bouton
+                startVelocity: 25,
                 colors: ['FFE400', 'FFBD00', 'E89400', 'FFCA6C', 'FDFFB8'],
                 origin: { x: originX, y: originY }
             };
@@ -141,13 +129,10 @@ function App() {
                     scalar: 1.2,
                     shapes: ['star']
                 });
-
-
             };
 
             setTimeout(shoot, 0);
         } else {
-            // Logique chatbot inchangée...
             const newSessionId = `chat_${Date.now()}_${Math.random().toString(36).slice(2)}`;
             setChatSessionId(newSessionId);
             setChatMessages([{ role: 'bot', text: `La bonne réponse est : ${exercices[currentQuestion].proposition_correct}` }]);
@@ -178,7 +163,21 @@ function App() {
         }
     }
 
-    // Le reste du code reste inchangé...
+    const voirStatistiques = async () => {
+        if (!currentUser) return;
+        try {
+            const res = await fetch(`${API_URL}/api/statistiques/${currentUser._id}`);
+            if (res.ok) {
+                const data = await res.json();
+                setUserStats(data);
+                setView('statistiques');
+            } else {
+                alert("Aucune statistique trouvée pour ce compte.");
+            }
+        } catch (err) {
+            console.error("Erreur de fetch :", err);
+        }
+    };
 
     const sendChatMessage = async () => {
         if (!chatInput.trim() || chatLoading) return;
@@ -229,7 +228,6 @@ function App() {
         } else {
             setQuizFinished(true);
             setSelectedAnswer(null);
-
 
             confetti({
                 particleCount: 150,
@@ -335,18 +333,46 @@ function App() {
                 <div>
                     <h1>Salut {currentUser?.pseudo || ""} !</h1>
                     <p className="subtitle">Prêt pour ton entraînement du jour ?</p>
-                    <div style={{ marginTop: '40px' }}>
+                    <div style={{ marginTop: '40px', display: 'flex', flexDirection: 'column', gap: '15px' }}>
                         <button
                             className="btn btn-primary"
                             onClick={lancerTestSurMesure}
                             disabled={loadingQuiz}
                         >
-                            {loadingQuiz ? "🧠 Création de ton test par l'IA..." : "Commencer le test"}
+                            {loadingQuiz ? "Création de ton test par l'IA..." : "Commencer le test"}
                         </button>
-                        <button className="btn btn-outline" onClick={handleLogout} style={{ marginTop: '20px' }}>
+                        <button className="btn btn-secondary" onClick={voirStatistiques}>
+                            Statistiques
+                        </button>
+                        <button className="btn btn-outline" onClick={handleLogout}>
                             Déconnexion
                         </button>
                     </div>
+                </div>
+            )}
+
+            {view === 'statistiques' && (
+                <div>
+                    <button className="btn-back" onClick={() => setView('home')}>← Retour</button>
+                    <h2>Tes Statistiques</h2>
+                    {userStats ? (
+                        <div style={{ marginTop: '20px', textAlign: 'center' }}>
+                            <div style={{ padding: '20px', backgroundColor: 'var(--gray-bg)', borderRadius: '16px', marginBottom: '20px' }}>
+                                <h3 style={{ margin: '0 0 10px 0', color: 'var(--text-muted)' }}>Taux de réussite</h3>
+                                <p style={{ fontSize: '32px', fontWeight: '800', color: 'var(--green)', margin: 0 }}>
+                                    {userStats.taux_reussite}%
+                                </p>
+                            </div>
+                            <div style={{ padding: '20px', backgroundColor: 'var(--gray-bg)', borderRadius: '16px' }}>
+                                <h3 style={{ margin: '0 0 10px 0', color: 'var(--text-muted)' }}>Temps de réponse moyen</h3>
+                                <p style={{ fontSize: '32px', fontWeight: '800', color: 'var(--blue)', margin: 0 }}>
+                                    {userStats.temps_moyen} sec
+                                </p>
+                            </div>
+                        </div>
+                    ) : (
+                        <p>Chargement des statistiques...</p>
+                    )}
                 </div>
             )}
 
@@ -365,7 +391,7 @@ function App() {
 
                             {exercices[currentQuestion]?.message_tuteur && (
                                 <div style={{ backgroundColor: '#e0f2fe', color: '#075985', padding: '10px', borderRadius: '5px', marginBottom: '15px', fontStyle: 'italic', fontSize: '14px' }}>
-                                    💡 <strong>Mot du formateur :</strong> {exercices[currentQuestion].message_tuteur}
+                                    <strong>Mot du formateur :</strong> {exercices[currentQuestion].message_tuteur}
                                 </div>
                             )}
 
@@ -396,7 +422,6 @@ function App() {
                                             key={i}
                                             className={btnClass}
                                             style={btnStyle}
-                                            // L'objet événement 'e' est passé ici
                                             onClick={(e) => handleAnswer(propo, e)}
                                             disabled={!!selectedAnswer}
                                         >
