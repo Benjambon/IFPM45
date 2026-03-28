@@ -2,6 +2,7 @@ import express from 'express';
 import mongoose from 'mongoose';
 import cors from 'cors';
 import 'dotenv/config';
+import bcrypt from 'bcrypt'; // 🔒 NOUVEAU : Import de bcrypt
 
 const app = express();
 
@@ -17,7 +18,7 @@ if (!MONGO_URI) {
     process.exit(1);
 }
 
-// Connexion standard, sans les options de forçage IPv4
+// Connexion standard
 mongoose.connect(MONGO_URI)
     .then(() => console.log("✅ Connecté à MongoDB avec succès !"))
     .catch(err => console.error("❌ Erreur de connexion MongoDB :", err));
@@ -57,7 +58,14 @@ app.post('/api/register', async (req, res) => {
             return res.status(400).json({ error: "Cet email est déjà utilisé par un autre compte." });
         }
 
-        const newUser = new User(req.body);
+        // 🔒 SÉCURITÉ : On hache le mot de passe avant de l'enregistrer
+        const saltRounds = 10;
+        const hashedPassword = await bcrypt.hash(req.body.password, saltRounds);
+
+        // On crée un nouvel objet utilisateur avec le mot de passe haché
+        const userData = { ...req.body, password: hashedPassword };
+
+        const newUser = new User(userData);
         await newUser.save();
         res.status(201).json({ message: "Compte et profil créés avec succès !" });
     } catch (err) {
@@ -68,13 +76,26 @@ app.post('/api/register', async (req, res) => {
 app.post('/api/login', async (req, res) => {
     try {
         const { email, password } = req.body;
-        const user = await User.findOne({ email: email, password: password });
+
+        // 🔍 ÉTAPE 1 : On cherche l'utilisateur par son email uniquement
+        const user = await User.findOne({ email: email });
 
         if (!user) {
             return res.status(401).json({ error: "Email ou mot de passe incorrect." });
         }
 
-        res.status(200).json({ message: "Connexion réussie !", user: user });
+        // 🔒 ÉTAPE 2 : On compare le mot de passe tapé avec le hash de la BDD
+        const isMatch = await bcrypt.compare(password, user.password);
+
+        if (!isMatch) {
+            return res.status(401).json({ error: "Email ou mot de passe incorrect." });
+        }
+
+        // Si tout est bon, on retire le mot de passe de l'objet avant de l'envoyer au front (meilleure pratique)
+        const userWithoutPassword = user.toObject();
+        delete userWithoutPassword.password;
+
+        res.status(200).json({ message: "Connexion réussie !", user: userWithoutPassword });
     } catch (err) {
         res.status(500).json({ error: err.message });
     }
